@@ -1,0 +1,1056 @@
+<title>Hospital Service to EKS</title>
+
+<style>
+  :root {
+    --bg: #F4F6FA;
+    --surface: #FFFFFF;
+    --surface-2: #EBEFF6;
+    --ink: #12151F;
+    --ink-soft: #4B5166;
+    --ink-faint: #7B8296;
+    --border: #DCE1EC;
+
+    --route: #2C4A73;
+    --route-soft: #E4EAF3;
+    --accent: #B8621A;
+    --accent-soft: #F5E6D3;
+    --good: #1E7A4C;
+    --good-soft: #DCF0E4;
+    --warn: #A33B2E;
+    --warn-soft: #F8DFDA;
+
+    --code-bg: #171B24;
+    --code-ink: #E7EAF2;
+    --code-soft: #8B93AC;
+    --code-border: #2A3145;
+    --code-accent: #E0913F;
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-body: "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F1320;
+      --surface: #171C2B;
+      --surface-2: #1C2233;
+      --ink: #E7EAF2;
+      --ink-soft: #A7AFC4;
+      --ink-faint: #6E7690;
+      --border: #2A3145;
+
+      --route: #7CA0D4;
+      --route-soft: #1D2A3D;
+      --accent: #E0913F;
+      --accent-soft: #33271A;
+      --good: #59BC8A;
+      --good-soft: #17281F;
+      --warn: #E4796A;
+      --warn-soft: #301C1A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0F1320;
+    --surface: #171C2B;
+    --surface-2: #1C2233;
+    --ink: #E7EAF2;
+    --ink-soft: #A7AFC4;
+    --ink-faint: #6E7690;
+    --border: #2A3145;
+
+    --route: #7CA0D4;
+    --route-soft: #1D2A3D;
+    --accent: #E0913F;
+    --accent-soft: #33271A;
+    --good: #59BC8A;
+    --good-soft: #17281F;
+    --warn: #E4796A;
+    --warn-soft: #301C1A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--route); }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+
+  .shell {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* ---------- Header ---------- */
+
+  header.masthead {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1.title {
+    font-size: clamp(2rem, 4vw, 2.75rem);
+    font-weight: 600;
+    margin: 0 0 14px;
+  }
+  p.lede {
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .status-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink-soft);
+  }
+  .chip.done { color: var(--good); border-color: var(--good); background: var(--good-soft); }
+  .chip.todo { color: var(--route); border-color: var(--route); background: var(--route-soft); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ---------- Layout: rail + content ---------- */
+
+  .layout {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  nav.route {
+    position: sticky;
+    top: 28px;
+    display: flex;
+    flex-direction: column;
+  }
+  @media (max-width: 900px) {
+    nav.route {
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      margin-bottom: 8px;
+      border-left: none;
+      padding-left: 0;
+    }
+    nav.route .railline { display: none; }
+  }
+  nav.route p.railhead {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 14px;
+  }
+  @media (max-width: 900px) { nav.route p.railhead { display: none; } }
+  nav.route ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 2px solid var(--border);
+  }
+  @media (max-width: 900px) {
+    nav.route ol { flex-direction: row; flex-wrap: wrap; border-left: none; gap: 8px; }
+  }
+  nav.route li { position: relative; }
+  nav.route a {
+    display: block;
+    padding: 7px 0 7px 16px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    margin-left: -2px;
+  }
+  nav.route a:hover { color: var(--ink); border-left-color: var(--accent); }
+  @media (max-width: 900px) {
+    nav.route a {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      margin-left: 0;
+    }
+  }
+  nav.route .n {
+    font-family: var(--font-mono);
+    color: var(--ink-faint);
+    margin-right: 6px;
+  }
+
+  main { min-width: 0; }
+
+  section.phase {
+    padding-bottom: 52px;
+    margin-bottom: 52px;
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: 24px;
+  }
+  section.phase:last-of-type { border-bottom: none; }
+
+  .phase-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  .phase-num {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  h2.phase-title { font-size: 1.5rem; margin: 0; }
+  .phase-sub { color: var(--ink-faint); font-size: 14px; margin: 4px 0 24px 44px; }
+
+  section.phase > .body { margin-left: 44px; }
+  @media (max-width: 560px) { section.phase > .body { margin-left: 0; } .phase-sub { margin-left: 0; } }
+
+  p { margin: 0 0 16px; max-width: 68ch; }
+  ul, ol.steps { margin: 0 0 18px; padding-left: 22px; max-width: 68ch; }
+  li { margin-bottom: 6px; }
+
+  h3 {
+    font-size: 1.05rem;
+    margin: 28px 0 10px;
+  }
+
+  /* ---------- Code blocks ---------- */
+
+  .term {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 10px;
+    margin: 0 0 18px;
+    overflow: hidden;
+  }
+  .term .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--code-soft);
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--code-border);
+  }
+  .term pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+  }
+  .term code {
+    font-family: var(--font-mono);
+    font-size: 13.2px;
+    line-height: 1.65;
+    color: var(--code-ink);
+    white-space: pre;
+  }
+  .term .c { color: var(--code-soft); font-style: italic; }
+  code.inline {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+
+  /* ---------- Callouts ---------- */
+
+  .callout {
+    border-left: 3px solid var(--route);
+    background: var(--route-soft);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 0 0 20px;
+    max-width: 68ch;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .tag {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--route);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .callout.tip { border-color: var(--accent); background: var(--accent-soft); }
+  .callout.tip .tag { color: var(--accent); }
+  .callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .callout.warn .tag { color: var(--warn); }
+  .callout.good { border-color: var(--good); background: var(--good-soft); }
+  .callout.good .tag { color: var(--good); }
+
+  /* ---------- Diagram ---------- */
+
+  figure.diagram {
+    margin: 8px 0 28px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  figure.diagram svg { display: block; width: 100%; max-width: 900px; height: auto; margin: 0 auto; color: var(--ink-faint); }
+  figure.diagram figcaption {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--ink-faint);
+    max-width: 68ch;
+  }
+  .dgbox { fill: var(--surface); stroke: var(--ink-faint); }
+  .dgboxfill { fill: var(--surface-2); }
+  .dgtitle { fill: var(--ink); font-size: 13px; font-weight: 600; font-family: var(--font-body); }
+  .dgsub { fill: var(--ink-faint); font-size: 10.5px; font-family: var(--font-body); }
+  .dglabel { fill: var(--ink-soft); font-size: 11px; font-family: var(--font-mono); }
+  .dgboundary { fill: none; stroke: var(--route); stroke-dasharray: 5 4; }
+  .dgboundarylabel { fill: var(--route); font-size: 10.5px; letter-spacing: 0.04em; font-family: var(--font-mono); text-transform: uppercase; }
+
+  /* ---------- Glossary ---------- */
+
+  .glossary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin: 0 0 8px;
+  }
+  .term-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .term-card dt {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13.5px;
+    color: var(--route);
+    margin-bottom: 5px;
+  }
+  .term-card dd { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+
+  /* ---------- Trouble table ---------- */
+
+  .trouble { display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px; }
+  .trouble-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .trouble-row .symptom {
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .trouble-row .cause { color: var(--ink-soft); font-size: 14px; margin-bottom: 8px; }
+  .trouble-row code.inline { margin-right: 4px; }
+
+  /* ---------- Cost table ---------- */
+
+  table.cost {
+    width: 100%;
+    max-width: 68ch;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    font-size: 14px;
+  }
+  table.cost th, table.cost td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.cost th { color: var(--ink-faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.cost td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+  table.cost tr.total td { font-weight: 600; border-bottom: none; padding-top: 12px; }
+
+  footer.end {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--ink-faint);
+    font-size: 13.5px;
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">🧭 First deployment · Hospital Service · Amazon EKS</p>
+    <h1 class="title">Getting Hospital Service onto EKS</h1>
+    <p class="lede">
+      A start-to-finish walkthrough for shipping this one microservice to a real,
+      highly-available Kubernetes cluster on AWS — written for the first time you've
+      done this, not the fiftieth.
+    </p>
+    <div class="status-row">
+      <span class="chip done"><span class="dot"></span>Dockerfile — built &amp; tested locally</span>
+      <span class="chip done"><span class="dot"></span>K8s manifests — written &amp; schema-validated</span>
+      <span class="chip todo"><span class="dot"></span>AWS infrastructure — not created yet</span>
+      <span class="chip todo"><span class="dot"></span>Image pushed — not yet</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="route">
+      <p class="railhead">The route</p>
+      <ol>
+        <li><a href="#big-picture"><span class="n">00</span>The big picture</a></li>
+        <li><a href="#before"><span class="n">01</span>Before you start</a></li>
+        <li><a href="#aws"><span class="n">02</span>Connect to AWS</a></li>
+        <li><a href="#cluster"><span class="n">03</span>Create the cluster</a></li>
+        <li><a href="#image"><span class="n">04</span>Build &amp; push the image</a></li>
+        <li><a href="#secret"><span class="n">05</span>Configure the secret</a></li>
+        <li><a href="#deploy"><span class="n">06</span>Deploy the app</a></li>
+        <li><a href="#expose"><span class="n">07</span>Expose it publicly</a></li>
+        <li><a href="#verify"><span class="n">08</span>Prove it works</a></li>
+        <li><a href="#ha"><span class="n">09</span>Confirm it's HA</a></li>
+        <li><a href="#trouble"><span class="n">10</span>When it breaks</a></li>
+        <li><a href="#cleanup"><span class="n">11</span>Shut it down</a></li>
+        <li><a href="#next"><span class="n">12</span>What's next</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section class="phase" id="big-picture">
+        <div class="phase-head"><h2 class="phase-title">The big picture</h2></div>
+        <div class="body">
+          <p>
+            Before any commands: here's what you're actually building. Two things happen —
+            <strong>shipping</strong> your code (top row) and <strong>running</strong> it
+            (bottom row). Your database stays outside the cluster entirely, in MongoDB Atlas.
+          </p>
+
+          <figure class="diagram">
+            <svg viewBox="0 0 920 560" role="img" aria-label="Diagram: a laptop builds a container image via Docker build, pushes it to Amazon ECR via docker push. Separately, a client sends an HTTPS request through an ALB Ingress, which routes to a Kubernetes Service, which fans out to three Pods spread across three availability zones inside the EKS cluster. The ECR image is pulled into those pods on deploy. All three pods read and write to an external MongoDB Atlas database.">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+                </marker>
+              </defs>
+
+              <!-- Row 1: build & ship -->
+              <rect class="dgbox" x="20" y="40" width="150" height="80" rx="8"></rect>
+              <text class="dgtitle" x="95" y="76" text-anchor="middle">Your laptop</text>
+              <text class="dgsub" x="95" y="94" text-anchor="middle">docker build .</text>
+
+              <line x1="172" y1="80" x2="246" y2="80" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <text class="dglabel" x="209" y="68" text-anchor="middle">docker build</text>
+
+              <rect class="dgbox" x="250" y="40" width="150" height="80" rx="8"></rect>
+              <text class="dgtitle" x="325" y="76" text-anchor="middle">Container image</text>
+              <text class="dgsub" x="325" y="94" text-anchor="middle">hospital-service:v1</text>
+
+              <line x1="402" y1="80" x2="478" y2="80" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <text class="dglabel" x="440" y="68" text-anchor="middle">docker push</text>
+
+              <rect class="dgbox" x="482" y="40" width="170" height="80" rx="8"></rect>
+              <text class="dgtitle" x="567" y="76" text-anchor="middle">Amazon ECR</text>
+              <text class="dgsub" x="567" y="94" text-anchor="middle">your private image registry</text>
+
+              <!-- dashed pulls-image path -->
+              <polyline points="567,120 567,145 815,145 815,278" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"></polyline>
+              <text class="dglabel" x="700" y="137" text-anchor="middle">pulls image on deploy</text>
+
+              <!-- Row 2: runtime request path -->
+              <rect class="dgbox" x="20" y="170" width="150" height="80" rx="8"></rect>
+              <text class="dgtitle" x="95" y="206" text-anchor="middle">Client</text>
+              <text class="dgsub" x="95" y="224" text-anchor="middle">browser, Postman, another service</text>
+
+              <line x1="172" y1="210" x2="246" y2="210" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <text class="dglabel" x="209" y="198" text-anchor="middle">HTTPS</text>
+
+              <rect class="dgbox" x="250" y="170" width="150" height="80" rx="8"></rect>
+              <text class="dgtitle" x="325" y="206" text-anchor="middle">ALB (Ingress)</text>
+              <text class="dgsub" x="325" y="224" text-anchor="middle">the front door</text>
+
+              <line x1="402" y1="210" x2="478" y2="210" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <text class="dglabel" x="440" y="198" text-anchor="middle">routes to</text>
+
+              <rect class="dgbox" x="482" y="170" width="170" height="80" rx="8"></rect>
+              <text class="dgtitle" x="567" y="204" text-anchor="middle">Service</text>
+              <text class="dgsub" x="567" y="222" text-anchor="middle">ClusterIP · internal DNS name</text>
+
+              <!-- EKS boundary -->
+              <rect class="dgboundary" x="400" y="280" width="490" height="180" rx="12"></rect>
+              <text class="dgboundarylabel" x="418" y="302">Amazon EKS cluster</text>
+              <text class="dgsub" x="418" y="317">namespace: uyir</text>
+
+              <text class="dglabel" x="567" y="268" text-anchor="middle">3 replicas, spread across zones</text>
+              <line x1="567" y1="250" x2="497" y2="340" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <line x1="567" y1="250" x2="650" y2="340" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <line x1="567" y1="250" x2="803" y2="340" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+
+              <rect class="dgbox dgboxfill" x="432" y="340" width="130" height="70" rx="8"></rect>
+              <text class="dgtitle" x="497" y="370" text-anchor="middle">Pod</text>
+              <text class="dgsub" x="497" y="388" text-anchor="middle">zone a</text>
+
+              <rect class="dgbox dgboxfill" x="585" y="340" width="130" height="70" rx="8"></rect>
+              <text class="dgtitle" x="650" y="370" text-anchor="middle">Pod</text>
+              <text class="dgsub" x="650" y="388" text-anchor="middle">zone b</text>
+
+              <rect class="dgbox dgboxfill" x="738" y="340" width="130" height="70" rx="8"></rect>
+              <text class="dgtitle" x="803" y="370" text-anchor="middle">Pod</text>
+              <text class="dgsub" x="803" y="388" text-anchor="middle">zone c</text>
+
+              <!-- converge to Atlas -->
+              <line x1="497" y1="410" x2="650" y2="448" stroke="currentColor" stroke-width="1.5"></line>
+              <line x1="650" y1="410" x2="650" y2="448" stroke="currentColor" stroke-width="1.5"></line>
+              <line x1="803" y1="410" x2="650" y2="448" stroke="currentColor" stroke-width="1.5"></line>
+              <line x1="650" y1="448" x2="650" y2="478" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"></line>
+              <text class="dglabel" x="700" y="440" text-anchor="middle">reads / writes</text>
+
+              <rect class="dgbox" x="490" y="480" width="320" height="60" rx="8"></rect>
+              <text class="dgtitle" x="650" y="504" text-anchor="middle">MongoDB Atlas</text>
+              <text class="dgsub" x="650" y="522" text-anchor="middle">external — not part of your cluster</text>
+            </svg>
+            <figcaption>
+              Shipping (top) and running (bottom) are separate concerns: you push an image once,
+              then Kubernetes pulls it into however many pods it needs — three here, spread
+              across three availability zones so losing one zone doesn't take the service down.
+            </figcaption>
+          </figure>
+
+          <h3>Words you'll see below</h3>
+          <dl class="glossary">
+            <div class="term-card"><dt>Image</dt><dd>Your app + everything it needs to run, packaged once by Docker.</dd></div>
+            <div class="term-card"><dt>Container</dt><dd>An image, actually running.</dd></div>
+            <div class="term-card"><dt>Pod</dt><dd>One running copy of your container, managed by Kubernetes.</dd></div>
+            <div class="term-card"><dt>Node</dt><dd>A real server (EC2 instance) that runs your pods.</dd></div>
+            <div class="term-card"><dt>Deployment</dt><dd>The rule "keep N copies of this pod running, always."</dd></div>
+            <div class="term-card"><dt>Service</dt><dd>A stable internal address for your pods, even as individual pods come and go.</dd></div>
+            <div class="term-card"><dt>Ingress / ALB</dt><dd>The door from the public internet into your cluster.</dd></div>
+            <div class="term-card"><dt>Namespace</dt><dd>A folder-like grouping so multiple microservices share a cluster without colliding.</dd></div>
+            <div class="term-card"><dt>HPA</dt><dd>Horizontal Pod Autoscaler — adds/removes pod copies automatically based on load.</dd></div>
+            <div class="term-card"><dt>PDB</dt><dd>Pod Disruption Budget — stops K8s taking down too many pods at once during maintenance.</dd></div>
+            <div class="term-card"><dt>EKS</dt><dd>AWS's managed Kubernetes — AWS runs the hard control-plane parts for you.</dd></div>
+            <div class="term-card"><dt>ECR</dt><dd>AWS's private storage for container images — like a private Docker Hub.</dd></div>
+            <div class="term-card"><dt>kubectl</dt><dd>The command-line tool you use to talk to a Kubernetes cluster.</dd></div>
+            <div class="term-card"><dt>eksctl</dt><dd>A CLI that turns "create an EKS cluster" into one command instead of dozens of manual steps.</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="phase" id="before">
+        <div class="phase-head"><span class="phase-num">01</span><h2 class="phase-title">Before you start</h2></div>
+        <p class="phase-sub">Tools to install, and one thing to know before you swipe your card.</p>
+        <div class="body">
+
+          <div class="callout warn">
+            <span class="tag">This costs real money</span>
+            <p>
+              Nothing in this guide is free. An EKS cluster left running racks up charges by
+              the hour whether or not you're using it — control plane, EC2 nodes, a NAT
+              gateway, a load balancer. Ballpark it at roughly <strong>$7–9 a day</strong> if
+              you leave everything on. That's not a reason to skip this — it's why
+              <a href="#cleanup">step 11, shutting it down</a>, is not optional homework.
+              Bookmark it now.
+            </p>
+          </div>
+
+          <p>Install these, then verify each one actually responds:</p>
+
+          <div class="term">
+            <div class="label">terminal — verify tooling</div>
+            <pre><code><span class="c"># AWS CLI v2</span>
+aws --version
+<span class="c"># kubectl - talks to any Kubernetes cluster</span>
+kubectl version --client
+<span class="c"># eksctl - creates/manages EKS clusters</span>
+eksctl version
+<span class="c"># helm - installs packaged Kubernetes apps (you'll need it for step 07)</span>
+helm version
+<span class="c"># Docker - builds and runs the image</span>
+docker --version</code></pre>
+          </div>
+
+          <p>
+            You'll also need an AWS account with billing enabled, and IAM credentials
+            (access key + secret) for a user with enough permissions to create clusters,
+            IAM roles, and load balancers. Using an admin-level user for this first run is
+            fine — just don't leave it that way once this becomes routine.
+          </p>
+        </div>
+      </section>
+
+      <section class="phase" id="aws">
+        <div class="phase-head"><span class="phase-num">02</span><h2 class="phase-title">Connect to AWS</h2></div>
+        <p class="phase-sub">Tell the CLI who you are.</p>
+        <div class="body">
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>aws configure
+<span class="c"># it will prompt for:</span>
+<span class="c">#   AWS Access Key ID</span>
+<span class="c">#   AWS Secret Access Key</span>
+<span class="c">#   Default region name      -&gt; ap-south-1</span>
+<span class="c">#   Default output format    -&gt; json</span></code></pre>
+          </div>
+          <p>
+            <code class="inline">ap-south-1</code> (Mumbai) is a good default here specifically
+            because your MongoDB Atlas cluster already lives there — keeping the app and the
+            database in the same region cuts network latency and avoids cross-region data
+            transfer charges. Use a different region if you have a reason to.
+          </p>
+          <div class="term">
+            <div class="label">terminal — checkpoint</div>
+            <pre><code>aws sts get-caller-identity</code></pre>
+          </div>
+          <div class="callout good">
+            <span class="tag">You'll know it worked when</span>
+            <p>You see your Account ID and an ARN back, not an error.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="cluster">
+        <div class="phase-head"><span class="phase-num">03</span><h2 class="phase-title">Create the cluster</h2></div>
+        <p class="phase-sub">This is the slow one — go make tea.</p>
+        <div class="body">
+          <div class="term">
+            <div class="label">terminal — takes 15–20 minutes</div>
+            <pre><code>eksctl create cluster --name uyir-cluster --region ap-south-1 --version 1.30 --with-oidc --nodegroup-name standard-workers --node-type t3.medium --nodes 3 --nodes-min 3 --nodes-max 6 --managed</code></pre>
+          </div>
+          <p>
+            <code class="inline">eksctl</code> is doing a lot here quietly: a VPC spread
+            across three availability zones, the EKS control plane, and a managed group of
+            three worker nodes — one of the things that makes this setup resilient to an
+            entire AWS zone having a bad day. <code class="inline">--with-oidc</code> sets up
+            something step 07 needs later, so it's worth including now rather than
+            retrofitting it.
+          </p>
+          <div class="callout">
+            <span class="tag">Note</span>
+            <p>
+              <code class="inline">--nodes-min/--nodes-max</code> only set the boundaries an
+              autoscaler is allowed to work within — they don't make scaling happen by
+              themselves. Nothing will actually add nodes automatically yet; that needs
+              Cluster Autoscaler or Karpenter, which this guide doesn't set up (see
+              <a href="#next">what's next</a>). Pod-level autoscaling in step 09 works without it.
+            </p>
+          </div>
+
+          <h3>Point kubectl at it</h3>
+          <p><code class="inline">eksctl</code> does this automatically, but confirm it:</p>
+          <div class="term">
+            <div class="label">terminal — checkpoint</div>
+            <pre><code>kubectl get nodes</code></pre>
+          </div>
+          <div class="callout good">
+            <span class="tag">You'll know it worked when</span>
+            <p>Three node names show up, all with status <code class="inline">Ready</code>.</p>
+          </div>
+
+          <h3>One more piece: metrics-server</h3>
+          <p>
+            EKS doesn't ship this by default, but the autoscaler in step 09 needs it to know
+            how busy your pods actually are:
+          </p>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml</code></pre>
+          </div>
+
+          <div class="callout warn">
+            <span class="tag">The gotcha nobody warns you about</span>
+            <p>
+              Your MongoDB Atlas cluster only accepts connections from IP addresses you've
+              explicitly allowed. Right now that's probably just your laptop. Once your pods
+              start connecting, they'll come from your VPC's <strong>NAT Gateway</strong> IP,
+              not your laptop's. Find it and allow it in Atlas <em>before</em> step 06,
+              or your pods will pass every check except actually reaching the database —
+              and readiness will fail forever with no obvious clue why.
+            </p>
+            <div class="term">
+              <div class="label">terminal — find the IP to allowlist</div>
+              <pre><code>aws ec2 describe-nat-gateways --region ap-south-1 --query "NatGateways[].NatGatewayAddresses[].PublicIp" --output text</code></pre>
+            </div>
+            <p>Add whatever IP(s) that prints to <strong>Atlas → Network Access → Add IP Address</strong>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="image">
+        <div class="phase-head"><span class="phase-num">04</span><h2 class="phase-title">Build &amp; push the image</h2></div>
+        <p class="phase-sub">Give Kubernetes something to run.</p>
+        <div class="body">
+          <p>Create somewhere for the image to live:</p>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>aws ecr create-repository --repository-name hospital-service --region ap-south-1</code></pre>
+          </div>
+          <p>
+            The output includes a <code class="inline">repositoryUri</code> — something like
+            <code class="inline">123456789012.dkr.ecr.ap-south-1.amazonaws.com/hospital-service</code>.
+            Copy it; you'll use it in every command below and again in step 06.
+          </p>
+
+          <div class="term">
+            <div class="label">terminal — log in, build, tag, push</div>
+            <pre><code><span class="c"># authenticate Docker against your ECR registry</span>
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin &lt;ECR_REPO_URI&gt;
+
+<span class="c"># build, from the repo root where the Dockerfile lives</span>
+docker build -t hospital-service:v1 .
+
+<span class="c"># tag it for ECR</span>
+docker tag hospital-service:v1 &lt;ECR_REPO_URI&gt;:v1
+
+<span class="c"># push</span>
+docker push &lt;ECR_REPO_URI&gt;:v1</code></pre>
+          </div>
+
+          <div class="callout tip">
+            <span class="tag">Tip</span>
+            <p>
+              Use a real tag like <code class="inline">v1</code> or a git commit SHA, never
+              <code class="inline">latest</code>. With <code class="inline">latest</code>,
+              two different deploys can point at the exact same tag while pointing at
+              completely different code — there's no way to tell what's actually running,
+              and no way to roll back to a specific version.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="secret">
+        <div class="phase-head"><span class="phase-num">05</span><h2 class="phase-title">Configure the secret</h2></div>
+        <p class="phase-sub">Give the app its database credentials, without putting them in git.</p>
+        <div class="body">
+          <p>First, create the namespace everything else in this guide lives in:</p>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl apply -f k8s/00-namespace.yaml</code></pre>
+          </div>
+
+          <div class="callout warn">
+            <span class="tag">Don't</span>
+            <p>
+              <code class="inline">k8s/01-secret.example.yaml</code> in the repo is a template
+              with placeholder values — it is not meant to be applied as-is, and a real one
+              should never be committed to git. Create the real secret directly from the
+              command line instead:
+            </p>
+          </div>
+
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl create secret generic hospital-service-secrets --namespace uyir --from-literal=SPRING_MONGODB_URI="mongodb+srv://&lt;user&gt;:&lt;password&gt;@uyirluster.a7yqyi9.mongodb.net/hospital?appName=uyirluster"</code></pre>
+          </div>
+          <div class="term">
+            <div class="label">terminal — checkpoint</div>
+            <pre><code>kubectl get secret hospital-service-secrets -n uyir</code></pre>
+          </div>
+          <p>
+            Longer term, look at the <strong>External Secrets Operator</strong> pulling from
+            AWS Secrets Manager instead of hand-typing this — it means the credential lives
+            in exactly one place instead of scattered across terminal history.
+          </p>
+        </div>
+      </section>
+
+      <section class="phase" id="deploy">
+        <div class="phase-head"><span class="phase-num">06</span><h2 class="phase-title">Deploy the app</h2></div>
+        <p class="phase-sub">Actually run it.</p>
+        <div class="body">
+          <p>
+            Open <code class="inline">k8s/02-deployment.yaml</code> and replace the placeholder
+            image with the real one you pushed in step 04:
+          </p>
+          <div class="term">
+            <div class="label">k8s/02-deployment.yaml</div>
+            <pre><code><span class="c"># before</span>
+image: &lt;ECR_REPO_URI&gt;/hospital-service:&lt;TAG&gt;
+
+<span class="c"># after, e.g.</span>
+image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/hospital-service:v1</code></pre>
+          </div>
+
+          <p>Then apply the core resources — everything except the Ingress, which needs step 07 first:</p>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl apply -f k8s/02-deployment.yaml -f k8s/03-service.yaml -f k8s/04-hpa.yaml -f k8s/05-pdb.yaml</code></pre>
+          </div>
+
+          <div class="term">
+            <div class="label">terminal — watch it start (Ctrl+C once all three are Running)</div>
+            <pre><code>kubectl get pods -n uyir -w</code></pre>
+          </div>
+
+          <div class="callout good">
+            <span class="tag">You'll know it worked when</span>
+            <p>Three pods show <code class="inline">1/1 Running</code>. If a pod is stuck otherwise, jump to <a href="#trouble">when it breaks</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="expose">
+        <div class="phase-head"><span class="phase-num">07</span><h2 class="phase-title">Expose it to the internet</h2></div>
+        <p class="phase-sub">This is the fiddliest step. Take it slowly.</p>
+        <div class="body">
+          <p>
+            Your Service is reachable inside the cluster, but nothing outside it yet. That
+            needs the <strong>AWS Load Balancer Controller</strong> — a piece of software
+            that watches for <code class="inline">Ingress</code> resources and provisions a
+            real Application Load Balancer for each one. It isn't built into EKS; you install
+            it once per cluster.
+          </p>
+
+          <h3>7a. Give it permission to create AWS resources</h3>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+
+aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam-policy.json</code></pre>
+          </div>
+          <p>Copy the policy ARN from the output, then attach it to a dedicated service account:</p>
+          <div class="term">
+            <div class="label">terminal — replace &lt;AWS_ACCOUNT_ID&gt;</div>
+            <pre><code>eksctl create iamserviceaccount --cluster=uyir-cluster --region=ap-south-1 --namespace=kube-system --name=aws-load-balancer-controller --attach-policy-arn=arn:aws:iam::&lt;AWS_ACCOUNT_ID&gt;:policy/AWSLoadBalancerControllerIAMPolicy --approve</code></pre>
+          </div>
+
+          <h3>7b. Install the controller with Helm</h3>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=uyir-cluster --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller</code></pre>
+          </div>
+          <div class="term">
+            <div class="label">terminal — checkpoint</div>
+            <pre><code>kubectl get deployment aws-load-balancer-controller -n kube-system</code></pre>
+          </div>
+          <div class="callout good">
+            <span class="tag">You'll know it worked when</span>
+            <p>The <code class="inline">READY</code> column shows <code class="inline">2/2</code>.</p>
+          </div>
+
+          <h3>7c. Now open the door</h3>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl apply -f k8s/06-ingress.yaml
+
+<span class="c"># wait a minute or two, then:</span>
+kubectl get ingress hospital-service -n uyir</code></pre>
+          </div>
+          <p>
+            The <code class="inline">ADDRESS</code> column fills in with your ALB's public DNS
+            name once it's provisioned — that's your public URL.
+          </p>
+
+          <div class="callout warn">
+            <span class="tag">Before you point real traffic at this</span>
+            <p>
+              The manifest itself carries this warning, worth repeating here: this app's
+              <code class="inline">SecurityConfig</code> currently permits every request,
+              unauthenticated. That's fine for the verification in the next step — it is not
+              fine for anything beyond it. Put real auth in front of this before it sees
+              traffic that matters.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="verify">
+        <div class="phase-head"><span class="phase-num">08</span><h2 class="phase-title">Prove it works</h2></div>
+        <p class="phase-sub">From outside the cluster, over the real internet.</p>
+        <div class="body">
+          <div class="term">
+            <div class="label">terminal — replace &lt;ALB_DNS_NAME&gt;</div>
+            <pre><code>curl "http://&lt;ALB_DNS_NAME&gt;/api/hospitals"</code></pre>
+          </div>
+          <p>
+            Swagger UI is live too, at <code class="inline">http://&lt;ALB_DNS_NAME&gt;/swagger-ui.html</code>
+            — useful for poking at every endpoint by hand without writing curl commands. If
+            you use the Postman collection from earlier, update its <code class="inline">baseUrl</code>
+            variable to this same ALB DNS name.
+          </p>
+        </div>
+      </section>
+
+      <section class="phase" id="ha">
+        <div class="phase-head"><span class="phase-num">09</span><h2 class="phase-title">Confirm it's actually HA</h2></div>
+        <p class="phase-sub">Don't just take the manifest's word for it.</p>
+        <div class="body">
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl get hpa -n uyir
+kubectl get pdb -n uyir
+kubectl get pods -n uyir -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
+kubectl get nodes -L topology.kubernetes.io/zone</code></pre>
+          </div>
+          <p>
+            Cross-reference the last two outputs: your three pods should be landing on nodes
+            in three <em>different</em> zones, not all piled onto one. That's what
+            <code class="inline">topologySpreadConstraints</code> in the Deployment is doing —
+            if one AWS availability zone has an outage, the other two pods keep serving
+            traffic.
+          </p>
+          <p>
+            The HPA will scale pod <em>count</em> up under load (3 → 10, per
+            <code class="inline">k8s/04-hpa.yaml</code>) — but remember from step 03, nothing
+            will add more <em>nodes</em> to make room for them yet without Cluster Autoscaler
+            or Karpenter. For now, keep an eye on <code class="inline">kubectl get nodes</code>
+            capacity if you're deliberately load-testing.
+          </p>
+        </div>
+      </section>
+
+      <section class="phase" id="trouble">
+        <div class="phase-head"><span class="phase-num">10</span><h2 class="phase-title">When it breaks</h2></div>
+        <p class="phase-sub">It will. Here's where to look first.</p>
+        <div class="body">
+          <div class="trouble">
+            <div class="trouble-row">
+              <div class="symptom">Pod stuck <code class="inline">Pending</code></div>
+              <div class="cause">Usually not enough node capacity to schedule it.</div>
+              <code class="inline">kubectl describe pod &lt;name&gt; -n uyir</code> — check the <code class="inline">Events</code> at the bottom.
+            </div>
+            <div class="trouble-row">
+              <div class="symptom"><code class="inline">ImagePullBackOff</code></div>
+              <div class="cause">Wrong image URI/tag in the Deployment, or the ECR login expired.</div>
+              <code class="inline">kubectl describe pod &lt;name&gt; -n uyir</code> — re-check the image string against what step 04 actually pushed.
+            </div>
+            <div class="trouble-row">
+              <div class="symptom"><code class="inline">CrashLoopBackOff</code></div>
+              <div class="cause">The app is starting, then dying — almost always a bad or missing secret.</div>
+              <code class="inline">kubectl logs &lt;name&gt; -n uyir --previous</code>
+            </div>
+            <div class="trouble-row">
+              <div class="symptom">Pod runs, but readiness never turns green</div>
+              <div class="cause">The app is up but can't reach MongoDB — nine times out of ten, this is the Atlas IP allowlist from step 03.</div>
+              <code class="inline">kubectl logs &lt;name&gt; -n uyir</code> — look for a Mongo connection timeout.
+            </div>
+            <div class="trouble-row">
+              <div class="symptom">Ingress <code class="inline">ADDRESS</code> never fills in</div>
+              <div class="cause">The Load Balancer Controller isn't running, or its IAM permissions are wrong.</div>
+              <code class="inline">kubectl get pods -n kube-system</code> and <code class="inline">kubectl logs deployment/aws-load-balancer-controller -n kube-system</code>
+            </div>
+            <div class="trouble-row">
+              <div class="symptom">ALB responds, but with 502/503</div>
+              <div class="cause">Pods aren't passing their health check yet, or the health-check path is wrong.</div>
+              Confirm <code class="inline">alb.ingress.kubernetes.io/healthcheck-path</code> in <code class="inline">k8s/06-ingress.yaml</code> matches <code class="inline">/actuator/health</code>.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="cleanup">
+        <div class="phase-head"><span class="phase-num">11</span><h2 class="phase-title">Shut it down</h2></div>
+        <p class="phase-sub">The step people skip, and then get a surprise bill.</p>
+        <div class="body">
+          <p>Rough illustrative costs if all of this is left running — check current AWS pricing for exact numbers:</p>
+          <table class="cost">
+            <thead><tr><th>Resource</th><th>Approx. cost</th></tr></thead>
+            <tbody>
+              <tr><td>EKS control plane</td><td class="num">~$0.10 / hr</td></tr>
+              <tr><td>3× t3.medium nodes</td><td class="num">~$0.12 / hr</td></tr>
+              <tr><td>NAT Gateway</td><td class="num">~$0.045 / hr + data</td></tr>
+              <tr><td>Application Load Balancer</td><td class="num">~$0.025 / hr + data</td></tr>
+              <tr class="total"><td>Roughly, per day</td><td class="num">$7–9 / day</td></tr>
+            </tbody>
+          </table>
+
+          <p>Tear down in this order — the Ingress first, so the ALB is deprovisioned cleanly before the cluster disappears under it:</p>
+          <div class="term">
+            <div class="label">terminal</div>
+            <pre><code>kubectl delete -f k8s/06-ingress.yaml
+
+<span class="c"># wait a minute, then confirm the ALB is gone</span>
+aws elbv2 describe-load-balancers --region ap-south-1
+
+kubectl delete -f k8s/02-deployment.yaml -f k8s/03-service.yaml -f k8s/04-hpa.yaml -f k8s/05-pdb.yaml
+
+helm uninstall aws-load-balancer-controller -n kube-system
+
+<span class="c"># tears down nodes, VPC, everything eksctl created - takes ~10 minutes</span>
+eksctl delete cluster --name uyir-cluster --region ap-south-1
+
+aws ecr delete-repository --repository-name hospital-service --region ap-south-1 --force</code></pre>
+          </div>
+          <div class="callout warn">
+            <span class="tag">Double-check</span>
+            <p>
+              Peek at the AWS Console once afterward: EC2 → Instances (should be empty),
+              VPC → NAT Gateways (occasionally one survives a botched teardown and keeps
+              billing quietly).
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="phase" id="next" style="border-bottom:none;">
+        <div class="phase-head"><span class="phase-num">12</span><h2 class="phase-title">What's next</h2></div>
+        <p class="phase-sub">This guide covers one service. You said there are more.</p>
+        <div class="body">
+          <ul>
+            <li>Repeat steps 04–07 for each additional microservice — they can all share this same cluster and the <code class="inline">uyir</code> namespace.</li>
+            <li>Once there are several of them talking to each other, revisit a service mesh (Istio, Linkerd, App Mesh) for automatic retries, mTLS, and cross-service observability — deliberately skipped here in favor of plain Kubernetes DNS.</li>
+            <li>Replace the by-hand build/push/apply cycle with CI/CD, so a merge deploys itself.</li>
+            <li>Add Cluster Autoscaler or Karpenter for real node-level autoscaling under sustained load.</li>
+            <li>Put real authentication in front of the API before it carries traffic that matters.</li>
+          </ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="end">
+    Files referenced throughout: <code class="inline">Dockerfile</code>, <code class="inline">.dockerignore</code>, and <code class="inline">k8s/00</code>–<code class="inline">06</code> in the repo.
+  </footer>
+
+</div>

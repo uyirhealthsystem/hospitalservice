@@ -1,0 +1,899 @@
+openapi: 3.0.3
+info:
+  title: Uyir Hospital Service API
+  description: |
+    REST API for hospital registry, doctor roster/live check-in, and emergency-SOS hospital
+    lookup. Every endpoint path contains the word "hospital" per project convention.
+
+    All endpoints are currently unauthenticated (open security posture until JWT/OAuth2 is
+    decided — see `docs/ARCHITECTURE.md`). All request/response bodies are JSON.
+  version: "0.0.1"
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Hospitals
+    description: Hospital registry — CRUD, search, geospatial lookup
+  - name: Doctors
+    description: Doctor roster — CRUD, search, live check-in/check-out
+  - name: Emergency SOS
+    description: Cross-cutting read-only lookup joining hospitals and live doctor presence
+
+paths:
+  /api/hospitals:
+    post:
+      tags: [Hospitals]
+      summary: Create a hospital
+      description: "`registrationNumber` must be unique across all hospitals."
+      operationId: createHospital
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HospitalRequest"
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: URL of the created hospital (`/api/hospitals/{id}`)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HospitalResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: registrationNumber already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    get:
+      tags: [Hospitals]
+      summary: Search hospitals (paginated)
+      operationId: searchHospitals
+      parameters:
+        - name: city
+          in: query
+          description: Case-insensitive exact match against address.city
+          schema: { type: string }
+        - name: state
+          in: query
+          description: Case-insensitive exact match against address.state
+          schema: { type: string }
+        - name: hospitalType
+          in: query
+          schema: { $ref: "#/components/schemas/HospitalType" }
+        - name: ownershipType
+          in: query
+          schema: { $ref: "#/components/schemas/OwnershipType" }
+        - name: active
+          in: query
+          description: Filter on soft-delete flag
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: sort
+          in: query
+          description: "e.g. sort=hospitalName,asc (default)"
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of hospitals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HospitalPageResponse"
+
+  /api/hospitals/{id}:
+    get:
+      tags: [Hospitals]
+      summary: Get a hospital by id
+      operationId: getHospitalById
+      parameters:
+        - $ref: "#/components/parameters/HospitalId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HospitalResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Hospitals]
+      summary: Update a hospital (full replace)
+      description: |
+        Full replace of the mutable fields — same body shape as create, `surgicalNetwork`
+        included. Because this is a full replace, not a patch, clearing a nested group after
+        opting out means sending it back explicitly (e.g. `"surgicalNetwork": null`), not just
+        flipping the gate boolean while leaving old values in the request body.
+      operationId: updateHospital
+      parameters:
+        - $ref: "#/components/parameters/HospitalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HospitalRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HospitalResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: registrationNumber collides with a different hospital
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      tags: [Hospitals]
+      summary: Deactivate a hospital (soft delete)
+      description: Sets `active=false`. The document is not removed — hospitals are regulated entities and deletions must remain auditable.
+      operationId: deactivateHospital
+      parameters:
+        - $ref: "#/components/parameters/HospitalId"
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hospitals/{id}/activate:
+    patch:
+      tags: [Hospitals]
+      summary: Reactivate a hospital
+      operationId: activateHospital
+      parameters:
+        - $ref: "#/components/parameters/HospitalId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HospitalResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hospitals/nearby:
+    get:
+      tags: [Hospitals]
+      summary: Find nearby hospitals (geospatial)
+      description: |
+        Uses the 2dsphere index on `address.location`. Returns a plain array ordered by
+        proximity — **not paginated**, since MongoDB `$near` doesn't return a total count
+        cheaply.
+      operationId: findNearbyHospitals
+      parameters:
+        - name: longitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: latitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: radiusKm
+          in: query
+          schema: { type: number, format: double, default: 10 }
+      responses:
+        "200":
+          description: Hospitals within radius, nearest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HospitalResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/hospital/doctors:
+    post:
+      tags: [Doctors]
+      summary: Create a doctor
+      description: "`tnmcNumber` must be unique across all doctors."
+      operationId: createDoctor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoctorRequest"
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: URL of the created doctor (`/api/hospital/doctors/{id}`)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: tnmcNumber already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/hospital/doctors/list:
+    post:
+      tags: [Doctors]
+      summary: List all doctors (unpaginated)
+      operationId: listAllDoctors
+      responses:
+        "200":
+          description: All doctors
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DoctorResponse" }
+
+  /api/hospital/doctors/search:
+    post:
+      tags: [Doctors]
+      summary: Search doctors (paginated)
+      operationId: searchDoctors
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: sort
+          in: query
+          description: "e.g. sort=name,asc (default)"
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoctorSearchRequest"
+      responses:
+        "200":
+          description: Page of doctors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorPageResponse"
+
+  /api/hospital/doctors/{id}:
+    get:
+      tags: [Doctors]
+      summary: Get a doctor by id
+      operationId: getDoctorById
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Doctors]
+      summary: Update a doctor (full replace)
+      operationId: updateDoctor
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoctorRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: tnmcNumber collides with a different doctor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      tags: [Doctors]
+      summary: Deactivate a doctor (soft delete)
+      description: Sets `active=false`. Not removed — TNMC registration is a regulated medical license and deactivations must remain auditable.
+      operationId: deactivateDoctor
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hospital/doctors/{id}/activate:
+    patch:
+      tags: [Doctors]
+      summary: Reactivate a doctor
+      operationId: activateDoctor
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hospital/doctors/{id}/check-in:
+    post:
+      tags: [Doctors]
+      summary: Check a doctor in at a hospital
+      description: |
+        Sets `currentHospitalId` and stamps `checkedInAt`. Checking in elsewhere implicitly
+        checks the doctor out of wherever they were before — `currentHospitalId` is
+        single-valued.
+      operationId: checkInDoctor
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoctorCheckInRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "400":
+          description: Doctor is inactive, or hospitalId isn't one of the doctor's own hospitalAssociations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Doctor id or hospital id doesn't exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/hospital/doctors/{id}/check-out:
+    post:
+      tags: [Doctors]
+      summary: Check a doctor out
+      description: |
+        Clears `currentHospitalId` and `checkedInAt` to null. Idempotent — checking out a
+        doctor who isn't checked in anywhere just returns their current (already-null) state.
+      operationId: checkOutDoctor
+      parameters:
+        - $ref: "#/components/parameters/DoctorId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoctorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hospital/emergency-sos:
+    get:
+      tags: [Emergency SOS]
+      summary: Find hospitals that can handle an emergency right now
+      description: |
+        Joins Hospital (geospatial + emergency-handling data) and Doctor (live check-in state).
+        A hospital qualifies only if it is within radiusKm, active, handles the given
+        emergencyType, AND has at least one active doctor currently checked in
+        (`currentHospitalId`). Hospitals with zero currently-checked-in doctors are excluded
+        entirely. Doctor specialty is **not** matched against emergency type — availability
+        reflects general presence, not a specialty-matched guarantee. Not paginated, same
+        reasoning as `/nearby`.
+      operationId: findEmergencyHospitals
+      parameters:
+        - name: emergencyType
+          in: query
+          required: true
+          description: Case-insensitive match against emergencyServices.specialtyEmergencyConditionsHandled
+          schema: { type: string }
+        - name: longitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: latitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: radiusKm
+          in: query
+          schema: { type: number, format: double, default: 10 }
+      responses:
+        "200":
+          description: Qualifying hospitals, nearest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmergencyHospitalSuggestion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+components:
+  parameters:
+    HospitalId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    DoctorId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation failed, or a required/typed query parameter is missing or malformed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        error: { type: string }
+        message: { type: string }
+        path: { type: string }
+        details:
+          type: array
+          items: { type: string }
+          nullable: true
+      example:
+        timestamp: "2026-08-15T09:30:00Z"
+        status: 400
+        error: "Bad Request"
+        message: "Validation failed"
+        path: "/api/hospitals"
+        details: ["address.city: must not be blank"]
+
+    HospitalType:
+      type: string
+      enum: [CLINIC, NURSING_HOME, HOSPITAL, SUPER_SPECIALITY, MEDICAL_COLLEGE]
+    OwnershipType:
+      type: string
+      enum: [PRIVATE, TRUST]
+    AmbulanceType:
+      type: string
+      enum: [NORMAL, BLS, VENTILATOR]
+    AvailabilityType:
+      type: string
+      enum: [CUSTOM_TIMINGS, WHATSAPP_BUSINESS_HOURS]
+    DoctorCategory:
+      type: string
+      enum: [PRIMARY, FREELANCER]
+    EngagementType:
+      type: string
+      enum: [REGULAR, ON_CALL]
+    Sex:
+      type: string
+      enum: [MALE, FEMALE, OTHER]
+
+    GeoJsonPoint:
+      type: object
+      description: "Coordinates are [longitude, latitude], per GeoJSON order."
+      properties:
+        type: { type: string, enum: [Point] }
+        coordinates:
+          type: array
+          items: { type: number, format: double }
+          minItems: 2
+          maxItems: 2
+      example: { type: "Point", coordinates: [80.2707, 13.0827] }
+
+    Address:
+      type: object
+      required: [addressLine, city, state, country, pincode]
+      properties:
+        addressLine: { type: string }
+        city: { type: string }
+        district: { type: string, nullable: true }
+        state: { type: string }
+        country: { type: string }
+        pincode: { type: string }
+        location:
+          allOf: [$ref: "#/components/schemas/GeoJsonPoint"]
+          description: Auto-populated via geocoding in principle; accepted directly today. Powers /nearby and the emergency-SOS lookup.
+          nullable: true
+
+    ContactDetails:
+      type: object
+      required: [phone]
+      properties:
+        phone: { type: string }
+        alternatePhone: { type: string, nullable: true }
+        email: { type: string, format: email, nullable: true }
+        emergencyHotline: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+
+    BedCapacity:
+      type: object
+      properties:
+        general: { type: integer, nullable: true }
+        icu: { type: integer, nullable: true }
+        nicu: { type: integer, nullable: true }
+
+    DiagnosticUnits:
+      type: object
+      properties:
+        lab: { type: boolean }
+        scanCentre: { type: boolean }
+        pathology: { type: boolean }
+
+    LabDetails:
+      type: object
+      properties:
+        labName: { type: string, nullable: true }
+        qualification: { type: string, nullable: true }
+        facilities:
+          type: array
+          items: { type: string }
+          nullable: true
+        scanCentreName: { type: string, nullable: true }
+        pcpndtRegistrationNumber: { type: string, nullable: true }
+
+    Facilities:
+      type: object
+      properties:
+        bedCapacity:
+          allOf: [$ref: "#/components/schemas/BedCapacity"]
+          nullable: true
+        specialtyDepartments:
+          type: array
+          items: { type: string }
+          nullable: true
+        diagnosticUnits:
+          allOf: [$ref: "#/components/schemas/DiagnosticUnits"]
+          nullable: true
+        labDetails:
+          allOf: [$ref: "#/components/schemas/LabDetails"]
+          nullable: true
+
+    EmergencyServices:
+      type: object
+      properties:
+        handlesEmergencies:
+          type: boolean
+          description: Gate for specialtyEmergencyConditionsHandled
+        specialtyEmergencyConditionsHandled:
+          type: array
+          items: { type: string }
+          nullable: true
+          description: Populated only when handlesEmergencies is true; expected to match the notified list of 13 specialty emergency conditions
+        ambulanceAvailable: { type: boolean }
+        ambulanceTypes:
+          type: array
+          items: { $ref: "#/components/schemas/AmbulanceType" }
+          nullable: true
+        ambulance24x7Available: { type: boolean }
+        willingToAttachAmbulanceToUdhs: { type: boolean }
+
+    NodalStaff:
+      type: object
+      properties:
+        name: { type: string, nullable: true }
+        mobileNumber: { type: string, nullable: true }
+        designation: { type: string, nullable: true }
+
+    StaffDetails:
+      type: object
+      properties:
+        nursingStaffCount: { type: integer, nullable: true }
+        supportiveStaffCount: { type: integer, nullable: true }
+        udhsStaff:
+          type: array
+          items: { $ref: "#/components/schemas/NodalStaff" }
+          nullable: true
+          description: At least 2 dedicated UDHS staff required in principle; not currently enforced by validation
+
+    ScansAvailable:
+      type: object
+      properties:
+        usg: { type: boolean }
+        xray: { type: boolean }
+        ct: { type: boolean }
+        mri: { type: boolean }
+        other:
+          type: array
+          items: { type: string }
+          nullable: true
+
+    Operations:
+      type: object
+      properties:
+        hospitalInsured: { type: boolean }
+        dedicatedPharmacyAvailable: { type: boolean }
+        hospitalManagementSoftwareInUse: { type: boolean }
+        empanelledInsuranceCompanies:
+          type: array
+          items: { type: string }
+          nullable: true
+        scansAvailable:
+          allOf: [$ref: "#/components/schemas/ScansAvailable"]
+          nullable: true
+
+    SurgicalNetwork:
+      type: object
+      description: The six fields past joinedSurgicalNetwork only mean something once that gate is true; not enforced server-side.
+      properties:
+        joinedSurgicalNetwork: { type: boolean }
+        operationTheatreCount: { type: integer, nullable: true }
+        laserEquipmentAvailable: { type: boolean }
+        minimallyInvasiveEquipmentAvailable: { type: boolean }
+        postOpRecoveryRoomAvailable: { type: boolean }
+        endoscopyAvailable: { type: boolean }
+        laparoscopyUnitsAvailable: { type: boolean }
+
+    HospitalRequest:
+      type: object
+      required: [hospitalName, registrationNumber, ownershipType, hospitalType, address, contactDetails]
+      properties:
+        hospitalName: { type: string }
+        registrationNumber: { type: string, description: Unique across all hospitals }
+        ownershipType: { $ref: "#/components/schemas/OwnershipType" }
+        hospitalType: { $ref: "#/components/schemas/HospitalType" }
+        address: { $ref: "#/components/schemas/Address" }
+        contactDetails: { $ref: "#/components/schemas/ContactDetails" }
+        facilities:
+          allOf: [$ref: "#/components/schemas/Facilities"]
+          nullable: true
+        emergencyServices:
+          allOf: [$ref: "#/components/schemas/EmergencyServices"]
+          nullable: true
+        staffDetails:
+          allOf: [$ref: "#/components/schemas/StaffDetails"]
+          nullable: true
+        operations:
+          allOf: [$ref: "#/components/schemas/Operations"]
+          nullable: true
+        surgicalNetwork:
+          allOf: [$ref: "#/components/schemas/SurgicalNetwork"]
+          nullable: true
+      example:
+        hospitalName: "Uyir Multi-Speciality Hospital"
+        registrationNumber: "REG-TN-2024-00123"
+        ownershipType: "PRIVATE"
+        hospitalType: "SUPER_SPECIALITY"
+        address:
+          addressLine: "12, Anna Salai"
+          city: "Chennai"
+          state: "Tamil Nadu"
+          country: "India"
+          pincode: "600002"
+          location: { type: "Point", coordinates: [80.2707, 13.0827] }
+        contactDetails: { phone: "+91-9876543210", email: "contact@uyirhospital.in" }
+        surgicalNetwork: { joinedSurgicalNetwork: false }
+
+    HospitalResponse:
+      allOf:
+        - $ref: "#/components/schemas/HospitalRequest"
+        - type: object
+          properties:
+            id: { type: string }
+            active: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    HospitalPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/HospitalResponse" }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        last: { type: boolean }
+
+    Availability:
+      type: object
+      properties:
+        type: { $ref: "#/components/schemas/AvailabilityType" }
+        customTimings:
+          type: string
+          nullable: true
+          description: Free-text schedule, populated only when type is CUSTOM_TIMINGS
+
+    HospitalAssociation:
+      type: object
+      properties:
+        hospitalId: { type: string, description: No referential check against real Hospital ids yet }
+        department: { type: string, nullable: true }
+        consultationFee: { type: number, format: double, nullable: true }
+        active: { type: boolean }
+
+    DoctorRequest:
+      type: object
+      required: [name, sex, tnmcNumber, engagementType, contactDetails]
+      properties:
+        name: { type: string }
+        age: { type: integer, nullable: true }
+        sex: { $ref: "#/components/schemas/Sex" }
+        tnmcNumber: { type: string, description: Unique across all doctors }
+        qualifications:
+          type: array
+          items: { type: string }
+          nullable: true
+        specialties:
+          type: array
+          items: { type: string }
+          nullable: true
+        yearsOfExperience: { type: integer, nullable: true }
+        consultationFee: { type: number, format: double, nullable: true }
+        availability:
+          allOf: [$ref: "#/components/schemas/Availability"]
+          nullable: true
+        engagementType: { $ref: "#/components/schemas/EngagementType" }
+        doctorCategory:
+          allOf: [$ref: "#/components/schemas/DoctorCategory"]
+          nullable: true
+        eSignDocumentUrl:
+          type: string
+          nullable: true
+          description: Required in practice for teleconsultation prescriptions, not enforced by validation
+        contactDetails: { $ref: "#/components/schemas/ContactDetails" }
+        hospitalAssociations:
+          type: array
+          items: { $ref: "#/components/schemas/HospitalAssociation" }
+          nullable: true
+      example:
+        name: "Dr. Anitha Raman"
+        age: 41
+        sex: "FEMALE"
+        tnmcNumber: "TNMC-2011-004521"
+        qualifications: ["MBBS", "MD Cardiology"]
+        specialties: ["Cardiology"]
+        yearsOfExperience: 15
+        consultationFee: 800
+        availability: { type: "CUSTOM_TIMINGS", customTimings: "Mon-Fri 10am-1pm" }
+        engagementType: "REGULAR"
+        doctorCategory: "PRIMARY"
+        contactDetails: { phone: "+91-9876543212", email: "anitha.raman@uyirhospital.in" }
+        hospitalAssociations:
+          - hospitalId: "66f1a2b3c4d5e6f7a8b9c0d1"
+            department: "Cardiology"
+            consultationFee: 800
+            active: true
+
+    DoctorResponse:
+      allOf:
+        - $ref: "#/components/schemas/DoctorRequest"
+        - type: object
+          properties:
+            id: { type: string }
+            currentHospitalId:
+              type: string
+              nullable: true
+              description: Server-managed. Set only via check-in, not accepted on create/update.
+            checkedInAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: Server-managed. Set only via check-in, not accepted on create/update.
+            active: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    DoctorPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/DoctorResponse" }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        last: { type: boolean }
+
+    DoctorSearchRequest:
+      type: object
+      description: All fields optional; an empty/omitted body matches every doctor.
+      properties:
+        specialty:
+          type: string
+          nullable: true
+          description: Case-insensitive exact match against any entry in specialties
+        hospitalId:
+          type: string
+          nullable: true
+          description: Doctors with a hospitalAssociations entry for this hospital id
+        engagementType:
+          allOf: [$ref: "#/components/schemas/EngagementType"]
+          nullable: true
+        doctorCategory:
+          allOf: [$ref: "#/components/schemas/DoctorCategory"]
+          nullable: true
+        active: { type: boolean, nullable: true }
+      example:
+        specialty: "Cardiology"
+        active: true
+
+    DoctorCheckInRequest:
+      type: object
+      required: [hospitalId]
+      properties:
+        hospitalId:
+          type: string
+          description: Must be one of the doctor's own hospitalAssociations
+
+    EmergencyHospitalSuggestion:
+      type: object
+      properties:
+        hospitalId: { type: string }
+        hospitalName: { type: string }
+        address: { $ref: "#/components/schemas/Address" }
+        contactDetails: { $ref: "#/components/schemas/ContactDetails" }
+        availableDoctorCount:
+          type: integer
+          description: Count of active doctors currently checked in at this hospital. A suggestion only exists at all when this is > 0.
+        availableSpecialties:
+          type: array
+          items: { type: string }
+      example:
+        hospitalId: "66f1a2b3c4d5e6f7a8b9c0d1"
+        hospitalName: "Uyir Multi-Speciality Hospital"
+        address: { addressLine: "12, Anna Salai", city: "Chennai" }
+        contactDetails: { phone: "+91-9876543210", emergencyHotline: "+91-9876500000" }
+        availableDoctorCount: 2
+        availableSpecialties: ["Cardiology", "General Medicine"]

@@ -1,0 +1,320 @@
+{
+	"info": {
+		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
+		"name": "Hospital Service",
+		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. All endpoints are unauthenticated for now (open security posture until JWT/OAuth2 is decided). Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+		{ "key": "hospitalId", "value": "", "type": "string" },
+		{ "key": "doctorId", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "Hospitals",
+			"item": [
+				{
+					"name": "Create Hospital",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('hospitalId', body.id);",
+									"    pm.test('hospitalId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": { \"general\": 80, \"icu\": 12, \"nicu\": 6 },\n    \"specialtyDepartments\": [\"Cardiology\", \"Orthopedics\", \"Neurology\"],\n    \"diagnosticUnits\": { \"lab\": true, \"scanCentre\": true, \"pathology\": true },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\"Blood Bank\", \"Biochemistry\"],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\"Cardiac Arrest\", \"Stroke\", \"Trauma\"],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\"BLS\", \"VENTILATOR\"],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      { \"name\": \"R. Kumar\", \"mobileNumber\": \"+91-9876512345\", \"designation\": \"UDHS Coordinator\" },\n      { \"name\": \"S. Priya\", \"mobileNumber\": \"+91-9876512346\", \"designation\": \"UDHS Nodal Officer\" }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\"Star Health\", \"ICICI Lombard\"],\n    \"scansAvailable\": { \"usg\": true, \"xray\": true, \"ct\": true, \"mri\": false, \"other\": [\"Doppler\"] }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": true,\n    \"operationTheatreCount\": 4,\n    \"laserEquipmentAvailable\": true,\n    \"minimallyInvasiveEquipmentAvailable\": true,\n    \"postOpRecoveryRoomAvailable\": true,\n    \"endoscopyAvailable\": true,\n    \"laparoscopyUnitsAvailable\": false\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals" ]
+						}
+					}
+				},
+				{
+					"name": "Get Hospital by Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+						}
+					}
+				},
+				{
+					"name": "Search Hospitals",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals?city=Chennai&hospitalType=SUPER_SPECIALITY&active=true&page=0&size=20&sort=hospitalName,asc",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals" ],
+							"query": [
+								{ "key": "city", "value": "Chennai" },
+								{ "key": "state", "value": "", "disabled": true },
+								{ "key": "hospitalType", "value": "SUPER_SPECIALITY" },
+								{ "key": "ownershipType", "value": "", "disabled": true },
+								{ "key": "active", "value": "true" },
+								{ "key": "page", "value": "0" },
+								{ "key": "size", "value": "20" },
+								{ "key": "sort", "value": "hospitalName,asc" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Find Nearby Hospitals",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/nearby?longitude=80.27&latitude=13.08&radiusKm=5",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "nearby" ],
+							"query": [
+								{ "key": "longitude", "value": "80.27" },
+								{ "key": "latitude", "value": "13.08" },
+								{ "key": "radiusKm", "value": "5" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Hospital",
+					"request": {
+						"method": "PUT",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"email\": \"contact@uyirhospital.in\"\n  },\n  \"surgicalNetwork\": { \"joinedSurgicalNetwork\": false }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+						}
+					}
+				},
+				{
+					"name": "Activate Hospital",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}/activate",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "{{hospitalId}}", "activate" ]
+						}
+					}
+				},
+				{
+					"name": "Deactivate Hospital",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Doctors",
+			"item": [
+				{
+					"name": "Create Doctor",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('doctorId', body.id);",
+									"    pm.test('doctorId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"yearsOfExperience\": 15,\n  \"consultationFee\": 800,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 800, \"active\": true }\n  ]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors" ]
+						}
+					}
+				},
+				{
+					"name": "Get Doctor by Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+						}
+					}
+				},
+				{
+					"name": "List All Doctors",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/list",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "list" ]
+						}
+					}
+				},
+				{
+					"name": "Search Doctors",
+					"request": {
+						"method": "POST",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"specialty\": \"Cardiology\",\n  \"active\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/search?page=0&size=20&sort=name,asc",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "search" ],
+							"query": [
+								{ "key": "page", "value": "0" },
+								{ "key": "size", "value": "20" },
+								{ "key": "sort", "value": "name,asc" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Doctor",
+					"request": {
+						"method": "PUT",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"yearsOfExperience\": 16,\n  \"consultationFee\": 900,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 900, \"active\": true }\n  ]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+						}
+					}
+				},
+				{
+					"name": "Activate Doctor",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/activate",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "activate" ]
+						}
+					}
+				},
+				{
+					"name": "Deactivate Doctor",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+						}
+					}
+				},
+				{
+					"name": "Check In Doctor",
+					"request": {
+						"method": "POST",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-in",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "check-in" ]
+						}
+					}
+				},
+				{
+					"name": "Check Out Doctor",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-out",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "check-out" ]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Emergency SOS",
+			"item": [
+				{
+					"name": "Find Hospitals for Emergency",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/emergency-sos?emergencyType=Cardiac Arrest&longitude=80.27&latitude=13.08&radiusKm=10",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospital", "emergency-sos" ],
+							"query": [
+								{ "key": "emergencyType", "value": "Cardiac Arrest" },
+								{ "key": "longitude", "value": "80.27" },
+								{ "key": "latitude", "value": "13.08" },
+								{ "key": "radiusKm", "value": "10" }
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}

@@ -1,0 +1,24 @@
+/mvnw text eol=lf
+*.cmd text eol=crlf
+# Maven build outputs
+target/
+*.jar
+*.war
+
+# IDE configurations
+.idea/
+*.iml
+.settings/
+.project
+.classpath
+
+# Local tools and assistants
+.claude/
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+

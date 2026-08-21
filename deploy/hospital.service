@@ -1,0 +1,15 @@
+[Unit]
+Description=Uyir Hospital Service
+After=network.target
+
+[Service]
+User=hospital
+WorkingDirectory=/opt/hospital
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75.0 -jar /opt/hospital/app.jar
+EnvironmentFile=/opt/hospital/.env
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

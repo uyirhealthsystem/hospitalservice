@@ -1,0 +1,18 @@
+# Internal service-to-service communication: other microservices in this cluster
+# reach this one at http://hospital-service.uyir.svc.cluster.local via plain
+# Kubernetes DNS - no extra tooling required at this scale.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hospital-service
+  namespace: uyir
+  labels:
+    app.kubernetes.io/name: hospital-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hospital-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
