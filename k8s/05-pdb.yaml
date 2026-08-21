@@ -1,0 +1,12 @@
+# Keeps at least 2 pods up during voluntary disruptions (node drains, cluster
+# autoscaler/Karpenter consolidation, rolling node upgrades).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hospital-service
+  namespace: uyir
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hospital-service
