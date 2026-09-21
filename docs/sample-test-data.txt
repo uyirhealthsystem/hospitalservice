@@ -1,0 +1,254 @@
+================================================================================
+SAMPLE TEST DATA - Hospital / Doctor / Emergency SOS / Bookings
+================================================================================
+Base URL assumed: http://localhost:8080
+Auth: this service trusts X-User-Id / X-User-Role headers forwarded by the
+gateway (it does not validate JWTs itself). For local testing, set them
+manually as shown below. Role must be one of: PATIENT, HOSPITAL.
+
+All hospitals below are placed near Chennai (lon ~80.27, lat ~13.08) so the
+"nearby" / "emergency-sos" geo queries return results within a 10km radius.
+
+--------------------------------------------------------------------------------
+1. CREATE HOSPITAL #1 - "Apollo General" (handles Cardiac Arrest)
+--------------------------------------------------------------------------------
+POST /api/hospitals
+Content-Type: application/json
+
+{
+  "hospitalName": "Apollo General Hospital",
+  "registrationNumber": "REG-TN-0001",
+  "ownershipType": "PRIVATE",
+  "hospitalType": "HOSPITAL",
+  "address": {
+    "addressLine": "21 Greams Road",
+    "city": "Chennai",
+    "district": "Chennai",
+    "state": "Tamil Nadu",
+    "country": "India",
+    "pincode": "600006",
+    "location": { "type": "Point", "coordinates": [80.2707, 13.0827] }
+  },
+  "contactDetails": {
+    "phone": "+914428290200",
+    "alternatePhone": "+914428290201",
+    "email": "contact@apollochennai.example.com",
+    "emergencyHotline": "+914428290911",
+    "website": "https://apollochennai.example.com"
+  },
+  "emergencyServices": {
+    "handlesEmergencies": true,
+    "specialtyEmergencyConditionsHandled": ["Cardiac Arrest", "Trauma", "Stroke"],
+    "ambulanceAvailable": true,
+    "ambulanceTypes": ["NORMAL", "VENTILATOR"],
+    "ambulance24x7Available": true,
+    "willingToAttachAmbulanceToUdhs": true
+  },
+  "active": true
+}
+
+Note the returned "id" as HOSPITAL_1_ID.
+
+--------------------------------------------------------------------------------
+2. CREATE HOSPITAL #2 - "Metro Burns Care" (handles Burns only, no Cardiac)
+--------------------------------------------------------------------------------
+POST /api/hospitals
+Content-Type: application/json
+
+{
+  "hospitalName": "Metro Burns Care Centre",
+  "registrationNumber": "REG-TN-0002",
+  "ownershipType": "TRUST",
+  "hospitalType": "SUPER_SPECIALITY",
+  "address": {
+    "addressLine": "45 Anna Salai",
+    "city": "Chennai",
+    "district": "Chennai",
+    "state": "Tamil Nadu",
+    "country": "India",
+    "pincode": "600002",
+    "location": { "type": "Point", "coordinates": [80.2685, 13.0604] }
+  },
+  "contactDetails": {
+    "phone": "+914442020100",
+    "email": "info@metroburns.example.com",
+    "emergencyHotline": "+914442020911"
+  },
+  "emergencyServices": {
+    "handlesEmergencies": true,
+    "specialtyEmergencyConditionsHandled": ["Burns"],
+    "ambulanceAvailable": true,
+    "ambulanceTypes": ["NORMAL"],
+    "ambulance24x7Available": false,
+    "willingToAttachAmbulanceToUdhs": false
+  },
+  "active": true
+}
+
+Note the returned "id" as HOSPITAL_2_ID.
+
+--------------------------------------------------------------------------------
+3. CREATE DOCTOR #1 - Cardiologist (will check in at Hospital #1)
+--------------------------------------------------------------------------------
+POST /api/hospital/doctors
+Content-Type: application/json
+
+{
+  "name": "Dr. Ananya Rao",
+  "age": 42,
+  "sex": "FEMALE",
+  "tnmcNumber": "TN-CARD-1001",
+  "qualifications": ["MBBS", "MD Cardiology", "DM Cardiology"],
+  "specialties": ["Cardiology"],
+  "yearsOfExperience": 15,
+  "consultationFee": 800,
+  "engagementType": "REGULAR",
+  "doctorCategory": "PRIMARY",
+  "contactDetails": {
+    "phone": "+919840010001",
+    "email": "ananya.rao@apollochennai.example.com"
+  }
+}
+
+Note the returned "id" as DOCTOR_1_ID.
+
+--------------------------------------------------------------------------------
+4. CREATE DOCTOR #2 - Dermatologist (unrelated specialty; used to prove the
+   emergency-sos specialty filter excludes non-matching doctors)
+--------------------------------------------------------------------------------
+POST /api/hospital/doctors
+Content-Type: application/json
+
+{
+  "name": "Dr. Karthik Iyer",
+  "age": 35,
+  "sex": "MALE",
+  "tnmcNumber": "TN-DERM-2002",
+  "qualifications": ["MBBS", "MD Dermatology"],
+  "specialties": ["Dermatology"],
+  "yearsOfExperience": 8,
+  "consultationFee": 600,
+  "engagementType": "REGULAR",
+  "doctorCategory": "PRIMARY",
+  "contactDetails": {
+    "phone": "+919840010002",
+    "email": "karthik.iyer@apollochennai.example.com"
+  }
+}
+
+Note the returned "id" as DOCTOR_2_ID.
+
+--------------------------------------------------------------------------------
+5. CHECK IN both doctors at Hospital #1 (required for SOS to count them as
+   "available" - currentHospitalId is set by this call)
+--------------------------------------------------------------------------------
+POST /api/hospital/doctors/{DOCTOR_1_ID}/check-in
+Content-Type: application/json
+
+{ "hospitalId": "HOSPITAL_1_ID" }
+
+POST /api/hospital/doctors/{DOCTOR_2_ID}/check-in
+Content-Type: application/json
+
+{ "hospitalId": "HOSPITAL_1_ID" }
+
+--------------------------------------------------------------------------------
+6. EMERGENCY SOS LOOKUP - should return Hospital #1 only, with
+   availableDoctorCount = 1 (Dr. Ananya Rao / Cardiology), NOT Dr. Karthik
+   Iyer (Dermatology), because "Cardiac Arrest" only maps to Cardiology.
+--------------------------------------------------------------------------------
+GET /api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
+
+Try also (expect empty - no hospital nearby handles it):
+GET /api/hospital/emergency-sos?emergencyType=Snake%20Bite&longitude=80.27&latitude=13.08&radiusKm=10
+
+Try also (expect Hospital #2, Metro Burns Care - but 0 doctors checked in
+there yet, so it will be filtered out until a doctor checks in):
+GET /api/hospital/emergency-sos?emergencyType=Burns&longitude=80.27&latitude=13.08&radiusKm=10
+
+--------------------------------------------------------------------------------
+7. EMERGENCY BOOKING - patient books at Hospital #1 for Cardiac Arrest
+   (requires X-User-Id / X-User-Role: PATIENT headers)
+--------------------------------------------------------------------------------
+POST /api/hospital/emergency-bookings
+Content-Type: application/json
+X-User-Id: patient-001
+X-User-Role: PATIENT
+
+{
+  "hospitalId": "HOSPITAL_1_ID",
+  "emergencyType": "Cardiac Arrest",
+  "patientName": "Suresh Kumar",
+  "patientPhone": "9876543210"
+}
+
+Negative test - should now be REJECTED with 400 Bad Request (hospital
+capability mismatch, gap-2 fix): booking Hospital #2 (Burns-only) for a
+Cardiac Arrest:
+
+POST /api/hospital/emergency-bookings
+Content-Type: application/json
+X-User-Id: patient-001
+X-User-Role: PATIENT
+
+{
+  "hospitalId": "HOSPITAL_2_ID",
+  "emergencyType": "Cardiac Arrest",
+  "patientName": "Suresh Kumar",
+  "patientPhone": "9876543210"
+}
+
+View a hospital's own emergency bookings (requires HOSPITAL role; hospitalId
+is taken from X-User-Id, so it must equal the hospital's own id):
+GET /api/hospital/emergency-bookings
+X-User-Id: HOSPITAL_1_ID
+X-User-Role: HOSPITAL
+
+--------------------------------------------------------------------------------
+8. DOCTOR APPOINTMENT BOOKING - patient books a regular appointment
+--------------------------------------------------------------------------------
+POST /api/hospital/doctor-appointments
+Content-Type: application/json
+X-User-Id: patient-002
+X-User-Role: PATIENT
+
+{
+  "hospitalId": "HOSPITAL_1_ID",
+  "doctorId": "DOCTOR_1_ID",
+  "appointmentDateTime": "2026-09-25T10:30:00Z",
+  "reason": "Routine cardiac checkup",
+  "patientName": "Meena Pillai",
+  "patientPhone": "9123456780"
+}
+
+Note: appointmentDateTime must be in the future relative to when you run
+this (it's validated with @Future) - adjust the date before sending.
+
+Reschedule (requires HOSPITAL role; X-User-Id must equal HOSPITAL_1_ID):
+PATCH /api/hospital/doctor-appointments/{BOOKING_ID}/reschedule
+Content-Type: application/json
+X-User-Id: HOSPITAL_1_ID
+X-User-Role: HOSPITAL
+
+{ "appointmentDateTime": "2026-09-26T11:00:00Z" }
+
+List a hospital's own appointment bookings:
+GET /api/hospital/doctor-appointments
+X-User-Id: HOSPITAL_1_ID
+X-User-Role: HOSPITAL
+
+================================================================================
+QUICK CURL EXAMPLES (replace HOSPITAL_1_ID / DOCTOR_1_ID after creating them)
+================================================================================
+
+curl -X POST http://localhost:8080/api/hospitals \
+  -H "Content-Type: application/json" \
+  -d '{"hospitalName":"Apollo General Hospital","registrationNumber":"REG-TN-0001","ownershipType":"PRIVATE","hospitalType":"HOSPITAL","address":{"addressLine":"21 Greams Road","city":"Chennai","state":"Tamil Nadu","country":"India","pincode":"600006","location":{"type":"Point","coordinates":[80.2707,13.0827]}},"contactDetails":{"phone":"+914428290200"},"emergencyServices":{"handlesEmergencies":true,"specialtyEmergencyConditionsHandled":["Cardiac Arrest","Trauma","Stroke"]},"active":true}'
+
+curl "http://localhost:8080/api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
+
+curl -X POST http://localhost:8080/api/hospital/emergency-bookings \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: patient-001" \
+  -H "X-User-Role: PATIENT" \
+  -d '{"hospitalId":"HOSPITAL_1_ID","emergencyType":"Cardiac Arrest","patientName":"Suresh Kumar","patientPhone":"9876543210"}'

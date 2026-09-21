@@ -1,6 +1,8 @@
 package com.uyir.hospital.config;
 
 import com.uyir.hospital.model.Doctor;
+import com.uyir.hospital.model.DoctorAppointmentBooking;
+import com.uyir.hospital.model.EmergencyBooking;
 import com.uyir.hospital.model.Hospital;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -31,5 +33,14 @@ public class MongoIndexConfig {
         doctorIndexOps.ensureIndex(new Index().on("hospitalAssociations.hospitalId", Direction.ASC));
         doctorIndexOps.ensureIndex(new Index().on("active", Direction.ASC));
         doctorIndexOps.ensureIndex(new Index().on("currentHospitalId", Direction.ASC));
+
+        IndexOperations emergencyBookingIndexOps = mongoTemplate.indexOps(EmergencyBooking.class);
+        emergencyBookingIndexOps.ensureIndex(new Index().on("hospitalId", Direction.ASC));
+        emergencyBookingIndexOps.ensureIndex(new Index().on("patientId", Direction.ASC));
+
+        IndexOperations appointmentBookingIndexOps = mongoTemplate.indexOps(DoctorAppointmentBooking.class);
+        appointmentBookingIndexOps.ensureIndex(new Index().on("hospitalId", Direction.ASC));
+        appointmentBookingIndexOps.ensureIndex(new Index().on("patientId", Direction.ASC));
+        appointmentBookingIndexOps.ensureIndex(new Index().on("doctorId", Direction.ASC));
     }
 }

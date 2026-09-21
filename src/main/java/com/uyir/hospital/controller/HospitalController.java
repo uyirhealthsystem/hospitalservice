@@ -1,5 +1,6 @@
 package com.uyir.hospital.controller;
 
+import com.uyir.hospital.dto.EmergencyServicesToggleRequest;
 import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.dto.PageResponse;
@@ -76,6 +77,14 @@ public class HospitalController {
     @PatchMapping("/{id}/activate")
     public HospitalResponse activate(@PathVariable String id) {
         return hospitalService.activate(id);
+    }
+
+    // Lets a hospital enable/disable its own emergency-sos visibility. Turning this off
+    // immediately excludes the hospital from GET /api/hospital/emergency-sos results.
+    @PatchMapping("/{id}/emergency-services/toggle")
+    public HospitalResponse toggleEmergencyServices(
+            @PathVariable String id, @Valid @RequestBody EmergencyServicesToggleRequest request) {
+        return hospitalService.setHandlesEmergencies(id, request.getHandlesEmergencies());
     }
 
     @DeleteMapping("/{id}")

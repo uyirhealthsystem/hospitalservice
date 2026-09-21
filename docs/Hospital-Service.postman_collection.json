@@ -2,13 +2,16 @@
 	"info": {
 		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
 		"name": "Hospital Service",
-		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. All endpoints are unauthenticated for now (open security posture until JWT/OAuth2 is decided). Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.",
+		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
 		{ "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
 		{ "key": "hospitalId", "value": "", "type": "string" },
-		{ "key": "doctorId", "value": "", "type": "string" }
+		{ "key": "doctorId", "value": "", "type": "string" },
+		{ "key": "patientId", "value": "patient-001", "type": "string" },
+		{ "key": "emergencyBookingId", "value": "", "type": "string" },
+		{ "key": "appointmentBookingId", "value": "", "type": "string" }
 	],
 	"item": [
 		{
@@ -136,6 +139,24 @@
 							"host": [ "{{baseUrl}}" ],
 							"path": [ "api", "hospitals", "{{hospitalId}}" ]
 						}
+					}
+				},
+				{
+					"name": "Toggle Emergency Services",
+					"request": {
+						"method": "PATCH",
+						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"handlesEmergencies\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}/emergency-services/toggle",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "hospitals", "{{hospitalId}}", "emergency-services", "toggle" ]
+						},
+						"description": "Turns the hospital's emergencyServices.handlesEmergencies flag on/off. Set \"handlesEmergencies\": false to immediately exclude this hospital from Emergency SOS results and reject new emergency bookings against it."
 					}
 				}
 			]
@@ -310,6 +331,278 @@
 								{ "key": "longitude", "value": "80.27" },
 								{ "key": "latitude", "value": "13.08" },
 								{ "key": "radiusKm", "value": "10" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Emergency Bookings",
+			"item": [
+				{
+					"name": "Create Emergency Booking (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('emergencyBookingId', body.id);",
+									"    pm.test('emergencyBookingId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"emergencyType\": \"Cardiac Arrest\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/emergency-bookings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"emergency-bookings"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Emergency Bookings (Hospital)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/emergency-bookings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"emergency-bookings"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Emergency Booking History (Patient)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/emergency-bookings/history",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"emergency-bookings",
+								"history"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Doctor Appointment Bookings",
+			"item": [
+				{
+					"name": "Create Appointment Booking (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('appointmentBookingId', body.id);",
+									"    pm.test('appointmentBookingId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T10:00:00Z\",\n  \"reason\": \"Routine checkup\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctor-appointments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"doctor-appointments"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Appointment Bookings (Hospital)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctor-appointments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"doctor-appointments"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Appointment Booking History (Patient)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctor-appointments/history",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"doctor-appointments",
+								"history"
+							]
+						}
+					}
+				},
+				{
+					"name": "Reschedule Appointment Booking (Hospital)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"appointmentDateTime\": \"2026-12-02T11:00:00Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/doctor-appointments/{{appointmentBookingId}}/reschedule",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"doctor-appointments",
+								"{{appointmentBookingId}}",
+								"reschedule"
 							]
 						}
 					}

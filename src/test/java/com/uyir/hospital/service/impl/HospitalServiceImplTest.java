@@ -14,6 +14,7 @@ import com.uyir.hospital.exception.DuplicateResourceException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.HospitalMapper;
 import com.uyir.hospital.model.Hospital;
+import com.uyir.hospital.model.embedded.EmergencyServices;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
@@ -180,6 +181,46 @@ class HospitalServiceImplTest {
     }
 
     @Test
+    void setHandlesEmergencies_noExistingEmergencyServices_createsAndEnablesIt() {
+        Hospital hospital = existingHospital();
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.setHandlesEmergencies("h1", true);
+
+        ArgumentCaptor<Hospital> captor = ArgumentCaptor.forClass(Hospital.class);
+        verify(hospitalRepository).save(captor.capture());
+        assertThat(captor.getValue().getEmergencyServices()).isNotNull();
+        assertThat(captor.getValue().getEmergencyServices().isHandlesEmergencies()).isTrue();
+    }
+
+    @Test
+    void setHandlesEmergencies_existingEmergencyServices_flipsFlagAndKeepsRestOfData() {
+        Hospital hospital = existingHospital();
+        hospital.setEmergencyServices(EmergencyServices.builder()
+                .handlesEmergencies(true)
+                .specialtyEmergencyConditionsHandled(List.of("Cardiac Arrest"))
+                .build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.setHandlesEmergencies("h1", false);
+
+        ArgumentCaptor<Hospital> captor = ArgumentCaptor.forClass(Hospital.class);
+        verify(hospitalRepository).save(captor.capture());
+        EmergencyServices saved = captor.getValue().getEmergencyServices();
+        assertThat(saved.isHandlesEmergencies()).isFalse();
+        assertThat(saved.getSpecialtyEmergencyConditionsHandled()).containsExactly("Cardiac Arrest");
+    }
+
+    @Test
+    void setHandlesEmergencies_hospitalMissing_throwsNotFound() {
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setHandlesEmergencies("h1", true)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
     void findNearby_delegatesWithPointAndDistanceInKilometers() {
         when(hospitalRepository.findByAddressLocationNear(any(Point.class), any(Distance.class)))
                 .thenReturn(List.of(existingHospital()));
@@ -194,5 +235,22 @@ class HospitalServiceImplTest {
         assertThat(pointCaptor.getValue().getY()).isEqualTo(13.0);
         assertThat(distanceCaptor.getValue().getValue()).isEqualTo(5.0);
         assertThat(distanceCaptor.getValue().getMetric()).isEqualTo(Metrics.KILOMETERS);
+    }
+
+    @Test
+    void findNearby_negativeRadius_throwsIllegalArgumentWithoutQueryingRepository() {
+        assertThatThrownBy(() -> service.findNearby(80.2, 13.0, -5.0)).isInstanceOf(IllegalArgumentException.class);
+
+        verify(hospitalRepository, never()).findByAddressLocationNear(any(Point.class), any(Distance.class));
+    }
+
+    @Test
+    void findNearby_longitudeOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.findNearby(280.0, 13.0, 5.0)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void findNearby_latitudeOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.findNearby(80.2, 130.0, 5.0)).isInstanceOf(IllegalArgumentException.class);
     }
 }

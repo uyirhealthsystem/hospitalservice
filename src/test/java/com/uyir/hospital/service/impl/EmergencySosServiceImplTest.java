@@ -1,8 +1,11 @@
 package com.uyir.hospital.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.uyir.hospital.dto.EmergencyHospitalSuggestion;
@@ -133,7 +136,7 @@ class EmergencySosServiceImplTest {
         // EmergencyServices.specialtyEmergencyConditionsHandled; any doctor checked in and
         // active is counted as "available" even if their specialty is unrelated to the
         // requested emergencyType (e.g. a dermatologist counted for a cardiac emergency).
-        // See EmergencySosServiceImpl.java:33-38 - not fixed here, out of scope.
+        // Intentional - see EmergencySosServiceImpl.java.
         Hospital hospital = hospitalHandling("h1", true, "Cardiac Arrest");
         when(hospitalRepository.findByAddressLocationNear(any(Point.class), any(Distance.class)))
                 .thenReturn(List.of(hospital));
@@ -145,5 +148,19 @@ class EmergencySosServiceImplTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getAvailableSpecialties()).containsExactly("Dermatology");
+    }
+
+    @Test
+    void findAvailableHospitals_negativeRadius_throwsIllegalArgumentWithoutQueryingRepository() {
+        assertThatThrownBy(() -> service.findAvailableHospitals("Cardiac Arrest", 80.2, 13.0, -5.0))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(hospitalRepository, never()).findByAddressLocationNear(any(Point.class), any(Distance.class));
+    }
+
+    @Test
+    void findAvailableHospitals_coordinatesOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.findAvailableHospitals("Cardiac Arrest", 280.0, 13.0, 10))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

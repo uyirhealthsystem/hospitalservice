@@ -25,6 +25,8 @@ public class EmergencySosServiceImpl implements EmergencySosService {
     public List<EmergencyHospitalSuggestion> findAvailableHospitals(
             String emergencyType, double longitude, double latitude, double radiusKm) {
 
+        GeoQuerySupport.validate(longitude, latitude, radiusKm);
+
         Point point = new Point(longitude, latitude);
         Distance distance = new Distance(radiusKm, Metrics.KILOMETERS);
 
@@ -40,11 +42,7 @@ public class EmergencySosServiceImpl implements EmergencySosService {
 
     private boolean handlesEmergency(Hospital hospital, String emergencyType) {
         EmergencyServices emergencyServices = hospital.getEmergencyServices();
-        if (emergencyServices == null || !emergencyServices.isHandlesEmergencies()) {
-            return false;
-        }
-        List<String> handled = emergencyServices.getSpecialtyEmergencyConditionsHandled();
-        return handled != null && handled.stream().anyMatch(condition -> condition.equalsIgnoreCase(emergencyType));
+        return emergencyServices != null && emergencyServices.handlesEmergencyType(emergencyType);
     }
 
     private EmergencyHospitalSuggestion toSuggestion(Hospital hospital) {

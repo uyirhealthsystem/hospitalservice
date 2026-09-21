@@ -7,6 +7,7 @@ import com.uyir.hospital.exception.DuplicateResourceException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.HospitalMapper;
 import com.uyir.hospital.model.Hospital;
+import com.uyir.hospital.model.embedded.EmergencyServices;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
@@ -101,7 +102,24 @@ public class HospitalServiceImpl implements HospitalService {
     }
 
     @Override
+    public HospitalResponse setHandlesEmergencies(String id, boolean handlesEmergencies) {
+        Hospital hospital = findEntityOrThrow(id);
+
+        EmergencyServices emergencyServices = hospital.getEmergencyServices();
+        if (emergencyServices == null) {
+            emergencyServices = EmergencyServices.builder().build();
+            hospital.setEmergencyServices(emergencyServices);
+        }
+        emergencyServices.setHandlesEmergencies(handlesEmergencies);
+        hospital.setUpdatedAt(Instant.now());
+
+        return hospitalMapper.toResponse(hospitalRepository.save(hospital));
+    }
+
+    @Override
     public List<HospitalResponse> findNearby(double longitude, double latitude, double radiusKm) {
+        GeoQuerySupport.validate(longitude, latitude, radiusKm);
+
         Point point = new Point(longitude, latitude);
         Distance distance = new Distance(radiusKm, Metrics.KILOMETERS);
 

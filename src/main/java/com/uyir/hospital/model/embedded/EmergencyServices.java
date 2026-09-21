@@ -22,4 +22,10 @@ public class EmergencyServices {
     private List<AmbulanceType> ambulanceTypes;
     private boolean ambulance24x7Available;
     private boolean willingToAttachAmbulanceToUdhs;
+
+    public boolean handlesEmergencyType(String emergencyType) {
+        return handlesEmergencies
+                && specialtyEmergencyConditionsHandled != null
+                && specialtyEmergencyConditionsHandled.stream().anyMatch(condition -> condition.equalsIgnoreCase(emergencyType));
+    }
 }

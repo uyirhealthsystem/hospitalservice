@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uyir.hospital.dto.EmergencyServicesToggleRequest;
 import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.dto.PageResponse;
@@ -68,7 +69,6 @@ class HospitalControllerTest {
         return HospitalResponse.builder()
                 .id(id)
                 .hospitalName("City Care Hospital")
-                .registrationNumber("REG-123")
                 .active(true)
                 .build();
     }
@@ -205,5 +205,28 @@ class HospitalControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(hospitalService).deactivate("h1");
+    }
+
+    @Test
+    void toggleEmergencyServices_validRequest_returns200() throws Exception {
+        when(hospitalService.setHandlesEmergencies("h1", true)).thenReturn(response("h1"));
+
+        mockMvc.perform(patch("/api/hospitals/h1/emergency-services/toggle")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(
+                                EmergencyServicesToggleRequest.builder().handlesEmergencies(true).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("h1"));
+
+        verify(hospitalService).setHandlesEmergencies("h1", true);
+    }
+
+    @Test
+    void toggleEmergencyServices_missingField_returns400() throws Exception {
+        mockMvc.perform(patch("/api/hospitals/h1/emergency-services/toggle")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"));
     }
 }
