@@ -492,3 +492,125 @@ Returns a plain array of `EmergencyHospitalSuggestion`, not paginated (same reas
 > **Inherits the check-in feature's weak point.** This reads `Doctor.currentHospitalId` directly — if a doctor forgot to check out after leaving (see [Live check-in / check-out](#live-check-in--check-out)), a hospital can appear as having emergency coverage it no longer actually has.
 
 **Also fixed while building this** (affects `/nearby` too, not just this endpoint): a missing or malformed required query parameter — omitting `emergencyType`, or passing non-numeric `longitude` — previously fell through to the generic 500 handler instead of a proper `400`. `GlobalExceptionHandler` now handles `MissingServletRequestParameterException` and `MethodArgumentTypeMismatchException` explicitly.
+
+---
+
+# Hospital Analytics API Reference
+
+Base URL: `/api/hospital/analytics` (contains `hospital` per the project convention)
+
+District-level analytics, called by the **Admin service** on behalf of an admin. This service does not look admins up or know which district an admin manages — the Admin service owns that and passes it in.
+
+| Requirement | Value |
+|---|---|
+| `X-User-Role` header | `ADMIN` or `SUPER_ADMIN` — any other role → `403` |
+| `X-User-Id` header | the admin's id (recorded as `createdBy` on snapshots) |
+| `district` query param | **required on every endpoint** — missing or blank → `400` |
+
+> **District authorisation is the caller's responsibility.** This service returns data for whatever `district` it is given, as long as the role is `ADMIN`/`SUPER_ADMIN`. The Admin service must only pass a district the admin is actually allowed to manage.
+
+**Which hospitals are "in the district":** hospitals whose `address.district` matches the `district` param, case-insensitively. A hospital with no `address.district` set will not show up in any district's analytics.
+
+**Date range** (all read endpoints + snapshot create): optional `fromDate` / `toDate` query params, ISO `yyyy-MM-dd`, both inclusive, interpreted as **IST** calendar days. Defaults to the last 30 days ending today. `fromDate` after `toDate`, or a range over 366 days, returns `400`. Emergency bookings are filtered by `requestedAt`; doctor appointments by `appointmentDateTime` (when the appointment is scheduled, not when it was booked). Hospital, bed and doctor figures are always *current* — they are not affected by the date range.
+
+## Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/summary` | District-wide totals |
+| `GET` | `/hospitals` | One row per hospital in the district, sorted by name |
+| `GET` | `/hospitals/{hospitalId}` | One hospital's row; `403` if it's in another district, `404` if unknown |
+| `GET` | `/trends` | Daily emergency-booking and appointment counts, one point per day including zero days |
+| `POST` | `/snapshots` | Save a frozen copy of the summary → `201` + `Location` |
+| `GET` | `/snapshots` | The district's saved snapshots, newest first |
+| `GET` | `/snapshots/{id}` | One snapshot; `403` if it belongs to another district |
+| `DELETE` | `/snapshots/{id}` | Delete a snapshot → `204`; `403` if it belongs to another district |
+
+```bash
+curl "http://localhost:8080/api/hospital/analytics/summary?district=Chennai&fromDate=2026-09-01&toDate=2026-09-30" \
+  -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN"
+```
+
+### Summary response
+
+```json
+{
+  "district": "Chennai",
+  "fromDate": "2026-09-01",
+  "toDate": "2026-09-30",
+  "generatedAt": "2026-10-02T06:15:00Z",
+  "hospitals": {
+    "total": 12, "active": 11, "inactive": 1,
+    "handlingEmergencies": 8, "withAmbulance": 7, "withAmbulance24x7": 5,
+    "byType": { "CLINIC": 2, "NURSING_HOME": 1, "HOSPITAL": 6, "SUPER_SPECIALITY": 2, "MEDICAL_COLLEGE": 1 },
+    "byOwnership": { "PRIVATE": 10, "TRUST": 2 }
+  },
+  "beds": { "general": 820, "icu": 96, "nicu": 30, "total": 946 },
+  "doctors": { "associated": 140, "checkedInNow": 37 },
+  "emergencyBookings": {
+    "total": 214,
+    "byStatus": { "REQUESTED": 20, "CANCELLED": 14, "COMPLETED": 180 },
+    "byEmergencyType": { "Cardiac Arrest": 61, "Stroke": 40, "Road Traffic Accident": 33 }
+  },
+  "appointments": {
+    "total": 1530,
+    "byStatus": { "CONFIRMED": 300, "RESCHEDULED": 45, "CANCELLED": 85, "COMPLETED": 1100 }
+  }
+}
+```
+
+- `byType` / `byOwnership` / `byStatus` always contain every enum value (zero if none), so the shape is stable for dashboards.
+- `byEmergencyType` is ordered most-frequent first.
+- `hospitals.handlingEmergencies` / `withAmbulance*` and all `beds` figures count **active hospitals only** — an inactive hospital's beds aren't available capacity.
+- `doctors.associated` = distinct active doctors with a `hospitalAssociations` entry for any district hospital. `doctors.checkedInNow` = those whose `currentHospitalId` is a district hospital (inherits the check-in feature's stale-check-in caveat).
+
+### Per-hospital row (`/hospitals`, `/hospitals/{id}`)
+
+```json
+{
+  "hospitalId": "66f1a2b3c4d5e6f7a8b9c0d1",
+  "hospitalName": "Uyir Multi-Speciality Hospital",
+  "city": "Chennai",
+  "hospitalType": "SUPER_SPECIALITY",
+  "active": true,
+  "handlesEmergencies": true,
+  "generalBeds": 120, "icuBeds": 20, "nicuBeds": 6,
+  "associatedDoctors": 18, "checkedInDoctors": 5,
+  "emergencyBookings": 42,
+  "emergencyBookingsByStatus": { "REQUESTED": 3, "CANCELLED": 2, "COMPLETED": 37 },
+  "appointments": 310,
+  "appointmentsByStatus": { "CONFIRMED": 60, "RESCHEDULED": 8, "CANCELLED": 12, "COMPLETED": 230 }
+}
+```
+
+`associatedDoctors` counts only *active* associations to that hospital.
+
+### Trends response
+
+```json
+[
+  { "date": "2026-09-01", "emergencyBookings": 7, "appointments": 52 },
+  { "date": "2026-09-02", "emergencyBookings": 0, "appointments": 48 }
+]
+```
+
+### Snapshots
+
+Live analytics are recomputed from current data on every request — bed capacity, hospital status and doctor associations as they stood on a past date can't be reconstructed later. A snapshot freezes the summary at the moment it's saved so admins can keep monthly/quarterly records.
+
+```bash
+curl -X POST "http://localhost:8080/api/hospital/analytics/snapshots?district=Chennai" \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN" \
+  -d '{ "label": "September 2026 review", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `label` | string | no | max 120 chars |
+| `fromDate` / `toDate` | date | no | Same defaults and limits as the read endpoints |
+
+Response: `{ id, district, label, fromDate, toDate, summary, createdBy, createdAt }` where `summary` is the full summary object above. Stored in the `hospital_analytics_snapshots` collection. Snapshots are immutable — there is no update endpoint, only create/list/get/delete. Delete is a hard delete (they're derived reports, not source records).
+
+> **Computed in-app, not via Mongo aggregation.** Each request loads the district's hospitals, their doctors, and the bookings in the date range, then counts in Java. Fine for a district's volume today; if a district reaches hundreds of thousands of bookings per range, move the counting into `$group` aggregation pipelines.
+

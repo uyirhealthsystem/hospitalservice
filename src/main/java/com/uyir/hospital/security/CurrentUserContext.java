@@ -2,6 +2,8 @@ package com.uyir.hospital.security;
 
 import com.uyir.hospital.exception.ForbiddenException;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 // AuthService validates credentials and issues the token; this service doesn't verify it
@@ -36,9 +38,15 @@ public class CurrentUserContext {
     }
 
     public String requireRole(Role required) {
+        return requireAnyRole(required);
+    }
+
+    public String requireAnyRole(Role... allowed) {
         Role role = getRole();
-        if (role != required) {
-            throw new ForbiddenException("This action requires the '" + required + "' role (" + USER_ROLE_HEADER + " header)");
+        List<Role> allowedRoles = Arrays.asList(allowed);
+        if (role == null || !allowedRoles.contains(role)) {
+            String expected = allowed.length == 1 ? "the '" + allowed[0] + "' role" : "one of the roles " + allowedRoles;
+            throw new ForbiddenException("This action requires " + expected + " (" + USER_ROLE_HEADER + " header)");
         }
         String userId = getUserId();
         if (userId == null || userId.isBlank()) {

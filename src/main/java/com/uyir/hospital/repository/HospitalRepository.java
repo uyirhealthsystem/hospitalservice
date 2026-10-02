@@ -14,4 +14,6 @@ public interface HospitalRepository extends MongoRepository<Hospital, String>, H
     boolean existsByRegistrationNumber(String registrationNumber);
 
     List<Hospital> findByAddressLocationNear(Point point, Distance distance);
+
+    List<Hospital> findByAddressDistrictIgnoreCase(String district);
 }

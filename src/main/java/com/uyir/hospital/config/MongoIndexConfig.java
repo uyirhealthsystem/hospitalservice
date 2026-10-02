@@ -1,5 +1,6 @@
 package com.uyir.hospital.config;
 
+import com.uyir.hospital.model.AnalyticsSnapshot;
 import com.uyir.hospital.model.Doctor;
 import com.uyir.hospital.model.DoctorAppointmentBooking;
 import com.uyir.hospital.model.EmergencyBooking;
@@ -25,6 +26,7 @@ public class MongoIndexConfig {
         IndexOperations hospitalIndexOps = mongoTemplate.indexOps(Hospital.class);
         hospitalIndexOps.ensureIndex(new GeospatialIndex("address.location").typed(GeoSpatialIndexType.GEO_2DSPHERE));
         hospitalIndexOps.ensureIndex(new Index().on("address.city", Direction.ASC));
+        hospitalIndexOps.ensureIndex(new Index().on("address.district", Direction.ASC));
         hospitalIndexOps.ensureIndex(new Index().on("hospitalType", Direction.ASC));
         hospitalIndexOps.ensureIndex(new Index().on("active", Direction.ASC));
 
@@ -42,5 +44,8 @@ public class MongoIndexConfig {
         appointmentBookingIndexOps.ensureIndex(new Index().on("hospitalId", Direction.ASC));
         appointmentBookingIndexOps.ensureIndex(new Index().on("patientId", Direction.ASC));
         appointmentBookingIndexOps.ensureIndex(new Index().on("doctorId", Direction.ASC));
+
+        IndexOperations analyticsSnapshotIndexOps = mongoTemplate.indexOps(AnalyticsSnapshot.class);
+        analyticsSnapshotIndexOps.ensureIndex(new Index().on("district", Direction.ASC).on("createdAt", Direction.DESC));
     }
 }

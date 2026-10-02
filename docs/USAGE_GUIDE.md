@@ -15,8 +15,8 @@ production) the API gateway attaches after validating the caller's JWT:
 
 | Header          | Meaning                              |
 |------------------|---------------------------------------|
-| `X-User-Id`      | who is calling (a patient id or a hospital id) |
-| `X-User-Role`    | `PATIENT` or `HOSPITAL`               |
+| `X-User-Id`      | who is calling (a patient id, hospital id, or district admin id) |
+| `X-User-Role`    | `PATIENT`, `HOSPITAL`, `ADMIN`, or `SUPER_ADMIN` |
 
 When testing locally/directly against this service, you set these headers yourself.
 Endpoints that don't need to know "who", like `GET /api/hospital/emergency-sos`
@@ -353,6 +353,8 @@ design, an emergency isn't something you push to next week.
 | `POST /api/hospital/doctor-appointments` | `PATIENT` | |
 | `PATCH /api/hospital/doctor-appointments/{id}/reschedule` | `HOSPITAL` | Only the caller's own hospital's bookings |
 | `GET /api/hospital/doctor-appointments` | `HOSPITAL` | Only the caller's own bookings |
+| `GET /api/hospital/analytics/**` | `ADMIN`, `SUPER_ADMIN` | `?district=` required on every call; the Admin service decides which district to pass |
+| `POST/DELETE /api/hospital/analytics/snapshots` | `ADMIN`, `SUPER_ADMIN` | Only snapshots belonging to the given `district` |
 
 ⚠️ **Heads up:** hospital and doctor management endpoints (`HospitalController`,
 `DoctorController`) currently have **no role restriction at all** — anyone can
