@@ -353,8 +353,8 @@ design, an emergency isn't something you push to next week.
 | `POST /api/hospital/doctor-appointments` | `PATIENT` | |
 | `PATCH /api/hospital/doctor-appointments/{id}/reschedule` | `HOSPITAL` | Only the caller's own hospital's bookings |
 | `GET /api/hospital/doctor-appointments` | `HOSPITAL` | Only the caller's own bookings |
-| `GET /api/hospital/analytics/**` | `ADMIN`, `SUPER_ADMIN` | `?district=` required on every call; the Admin service decides which district to pass |
-| `POST/DELETE /api/hospital/analytics/snapshots` | `ADMIN`, `SUPER_ADMIN` | Only snapshots belonging to the given `district` |
+| `POST /api/hospital/analytics/**` | `ADMIN`, `SUPER_ADMIN` | All POST with a JSON body; `district` required in the body |
+| `POST /api/hospital/analytics/snapshots/**` | `ADMIN`, `SUPER_ADMIN` | Only snapshots belonging to the given `district` |
 
 ⚠️ **Heads up:** hospital and doctor management endpoints (`HospitalController`,
 `DoctorController`) currently have **no role restriction at all** — anyone can

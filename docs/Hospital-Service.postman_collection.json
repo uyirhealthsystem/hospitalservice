@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
 		"name": "Hospital Service",
-		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN and a required ?district= param (the Admin service decides which district an admin manages). Run \"Create Analytics Snapshot\" before the get/delete snapshot requests — it populates {{analyticsSnapshotId}}.",
+		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are all POST with a JSON body, called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN and a required \"district\" body field (the Admin service decides which district an admin manages). Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -615,7 +615,7 @@
 		},
 		{
 			"name": "Hospital Analytics",
-			"description": "District-level analytics. Called by the Admin service on behalf of an admin - this service doesn't look admins up.\n\n- Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id = the admin's id.\n- Every endpoint requires ?district={{district}}. The Admin service decides which district an admin may see; this service trusts the param.\n- Hospitals belong to a district via address.district (case-insensitive).",
+			"description": "District-level analytics. Called by the Admin service on behalf of an admin - this service doesn't look admins up.\n\n- Every endpoint is POST with a JSON body; nothing goes in the URL.\n- Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id = the admin's id.\n- district is required in every body. The Admin service decides which district an admin may see; this service trusts it.\n- Hospitals belong to a district via address.district (case-insensitive).",
 			"item": [
 				{
 					"name": "Get District Summary",
@@ -631,8 +631,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -642,9 +646,18 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "District-wide totals for the given district.",
+						"description": "District-wide totals. fromDate/toDate optional (yyyy-MM-dd, IST, inclusive; default last 30 days).",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary?district={{district}}&fromDate=2026-09-01&toDate=2026-09-30",
+							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -653,23 +666,6 @@
 								"hospital",
 								"analytics",
 								"summary"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								},
-								{
-									"key": "fromDate",
-									"value": "2026-09-01",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to 29 days before toDate."
-								},
-								{
-									"key": "toDate",
-									"value": "2026-09-30",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to today."
-								}
 							]
 						}
 					}
@@ -688,8 +684,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{superAdminId}}"
@@ -700,8 +700,17 @@
 							}
 						],
 						"description": "Same endpoint as SUPER_ADMIN - both roles are accepted.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary?district={{district}}&fromDate=2026-09-01&toDate=2026-09-30",
+							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -710,23 +719,6 @@
 								"hospital",
 								"analytics",
 								"summary"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								},
-								{
-									"key": "fromDate",
-									"value": "2026-09-01",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to 29 days before toDate."
-								},
-								{
-									"key": "toDate",
-									"value": "2026-09-30",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to today."
-								}
 							]
 						}
 					}
@@ -745,8 +737,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -757,8 +753,17 @@
 							}
 						],
 						"description": "One row per hospital in the district, sorted by name.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals?district={{district}}&fromDate=2026-09-01&toDate=2026-09-30",
+							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -767,32 +772,19 @@
 								"hospital",
 								"analytics",
 								"hospitals"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								},
-								{
-									"key": "fromDate",
-									"value": "2026-09-01",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to 29 days before toDate."
-								},
-								{
-									"key": "toDate",
-									"value": "2026-09-30",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to today."
-								}
 							]
 						}
 					}
 				},
 				{
-					"name": "Get Hospital Analytics by Id",
+					"name": "Get Hospital Analytics Detail",
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -802,9 +794,18 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "One hospital's figures. 403 if the hospital's address.district doesn't match the district param, 404 if the id is unknown.",
+						"description": "One hospital's figures. 403 if the hospital's address.district doesn't match district, 404 if hospitalId is unknown.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals/{{hospitalId}}?district={{district}}&fromDate=2026-09-01&toDate=2026-09-30",
+							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals/detail",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -813,24 +814,7 @@
 								"hospital",
 								"analytics",
 								"hospitals",
-								"{{hospitalId}}"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								},
-								{
-									"key": "fromDate",
-									"value": "2026-09-01",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to 29 days before toDate."
-								},
-								{
-									"key": "toDate",
-									"value": "2026-09-30",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to today."
-								}
+								"detail"
 							]
 						}
 					}
@@ -849,8 +833,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -861,8 +849,17 @@
 							}
 						],
 						"description": "Daily emergency-booking and appointment counts, one point per IST day including zero days.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/trends?district={{district}}&fromDate=2026-09-01&toDate=2026-09-30",
+							"raw": "{{baseUrl}}/api/hospital/analytics/trends",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -871,23 +868,6 @@
 								"hospital",
 								"analytics",
 								"trends"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								},
-								{
-									"key": "fromDate",
-									"value": "2026-09-01",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to 29 days before toDate."
-								},
-								{
-									"key": "toDate",
-									"value": "2026-09-30",
-									"description": "Optional, yyyy-MM-dd, inclusive (IST). Defaults to today."
-								}
 							]
 						}
 					}
@@ -926,10 +906,10 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "Saves a frozen copy of the district summary. Body fields all optional; label max 120 chars. createdBy = X-User-Id.",
+						"description": "Saves a frozen copy of the district summary. label optional, max 120 chars. createdBy = X-User-Id.",
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"label\": \"September 2026 review\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"label\": \"September 2026 review\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -937,7 +917,7 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots?district={{district}}",
+							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -946,13 +926,6 @@
 								"hospital",
 								"analytics",
 								"snapshots"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								}
 							]
 						}
 					}
@@ -971,8 +944,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -983,8 +960,17 @@
 							}
 						],
 						"description": "The district's saved snapshots, newest first.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots?district={{district}}",
+							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/list",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -992,20 +978,14 @@
 								"api",
 								"hospital",
 								"analytics",
-								"snapshots"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								}
+								"snapshots",
+								"list"
 							]
 						}
 					}
 				},
 				{
-					"name": "Get Analytics Snapshot by Id",
+					"name": "Get Analytics Snapshot Detail",
 					"event": [
 						{
 							"listen": "test",
@@ -1018,8 +998,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -1030,8 +1014,17 @@
 							}
 						],
 						"description": "403 if the snapshot belongs to a different district.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"snapshotId\": \"{{analyticsSnapshotId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/{{analyticsSnapshotId}}?district={{district}}",
+							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/detail",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -1040,14 +1033,7 @@
 								"hospital",
 								"analytics",
 								"snapshots",
-								"{{analyticsSnapshotId}}"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								}
+								"detail"
 							]
 						}
 					}
@@ -1066,8 +1052,12 @@
 						}
 					],
 					"request": {
-						"method": "DELETE",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -1077,9 +1067,18 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "Hard delete. 403 if the snapshot belongs to a different district.",
+						"description": "Hard delete. POST (not DELETE) because DELETE bodies are dropped by many proxies. 403 if the snapshot belongs to a different district.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"snapshotId\": \"{{analyticsSnapshotId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/{{analyticsSnapshotId}}?district={{district}}",
+							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/delete",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -1088,14 +1087,7 @@
 								"hospital",
 								"analytics",
 								"snapshots",
-								"{{analyticsSnapshotId}}"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								}
+								"delete"
 							]
 						}
 					}
@@ -1114,8 +1106,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{hospitalId}}"
@@ -1126,8 +1122,17 @@
 							}
 						],
 						"description": "Negative check: only ADMIN / SUPER_ADMIN may call analytics endpoints.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary?district={{district}}",
+							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -1136,13 +1141,6 @@
 								"hospital",
 								"analytics",
 								"summary"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages."
-								}
 							]
 						}
 					}
@@ -1161,8 +1159,12 @@
 						}
 					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "X-User-Id",
 								"value": "{{adminId}}"
@@ -1172,7 +1174,16 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "Negative check: district is required.",
+						"description": "Negative check: district is required in the body.",
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
 							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
 							"host": [
@@ -1183,14 +1194,6 @@
 								"hospital",
 								"analytics",
 								"summary"
-							],
-							"query": [
-								{
-									"key": "district",
-									"value": "{{district}}",
-									"description": "Required. Passed by the Admin service - the district this admin manages.",
-									"disabled": true
-								}
 							]
 						}
 					}

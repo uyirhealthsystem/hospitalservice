@@ -1,7 +1,6 @@
 package com.uyir.hospital.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,15 +11,13 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AnalyticsSnapshotRequest {
+public class AnalyticsRequest {
 
+    // Passed by the Admin service - the district this admin manages
     @NotBlank
     private String district;
 
-    @Size(max = 120)
-    private String label;
-
-    // Both optional; same defaults as the live summary endpoint (last 30 days)
+    // Both optional, yyyy-MM-dd, inclusive (IST); defaults to the last 30 days
     private LocalDate fromDate;
     private LocalDate toDate;
 }

@@ -505,30 +505,36 @@ District-level analytics, called by the **Admin service** on behalf of an admin.
 |---|---|
 | `X-User-Role` header | `ADMIN` or `SUPER_ADMIN` — any other role → `403` |
 | `X-User-Id` header | the admin's id (recorded as `createdBy` on snapshots) |
-| `district` query param | **required on every endpoint** — missing or blank → `400` |
+| `district` in the JSON body | **required on every endpoint** — missing or blank → `400` |
+
+**Every endpoint is `POST` with a JSON body** — no query params or path ids, nothing in the URL (same approach as the Doctor `/list` and `/search` endpoints). A missing or malformed body (bad JSON, or a date not in `yyyy-MM-dd`) → `400` "Request body is missing or malformed".
 
 > **District authorisation is the caller's responsibility.** This service returns data for whatever `district` it is given, as long as the role is `ADMIN`/`SUPER_ADMIN`. The Admin service must only pass a district the admin is actually allowed to manage.
 
-**Which hospitals are "in the district":** hospitals whose `address.district` matches the `district` param, case-insensitively. A hospital with no `address.district` set will not show up in any district's analytics.
+**Which hospitals are "in the district":** hospitals whose `address.district` matches `district`, case-insensitively. A hospital with no `address.district` set will not show up in any district's analytics.
 
-**Date range** (all read endpoints + snapshot create): optional `fromDate` / `toDate` query params, ISO `yyyy-MM-dd`, both inclusive, interpreted as **IST** calendar days. Defaults to the last 30 days ending today. `fromDate` after `toDate`, or a range over 366 days, returns `400`. Emergency bookings are filtered by `requestedAt`; doctor appointments by `appointmentDateTime` (when the appointment is scheduled, not when it was booked). Hospital, bed and doctor figures are always *current* — they are not affected by the date range.
+**Date range** (all read endpoints + snapshot create): optional `fromDate` / `toDate` body fields, ISO `yyyy-MM-dd`, both inclusive, interpreted as **IST** calendar days. Defaults to the last 30 days ending today. `fromDate` after `toDate`, or a range over 366 days, returns `400`. Emergency bookings are filtered by `requestedAt`; doctor appointments by `appointmentDateTime` (when the appointment is scheduled, not when it was booked). Hospital, bed and doctor figures are always *current* — they are not affected by the date range.
 
 ## Endpoints
 
-| Method | Path | Description |
+All `POST`, all under `/api/hospital/analytics`:
+
+| Path | Body | Description |
 |---|---|---|
-| `GET` | `/summary` | District-wide totals |
-| `GET` | `/hospitals` | One row per hospital in the district, sorted by name |
-| `GET` | `/hospitals/{hospitalId}` | One hospital's row; `403` if it's in another district, `404` if unknown |
-| `GET` | `/trends` | Daily emergency-booking and appointment counts, one point per day including zero days |
-| `POST` | `/snapshots` | Save a frozen copy of the summary → `201` + `Location` |
-| `GET` | `/snapshots` | The district's saved snapshots, newest first |
-| `GET` | `/snapshots/{id}` | One snapshot; `403` if it belongs to another district |
-| `DELETE` | `/snapshots/{id}` | Delete a snapshot → `204`; `403` if it belongs to another district |
+| `/summary` | `{ district, fromDate?, toDate? }` | District-wide totals |
+| `/hospitals` | `{ district, fromDate?, toDate? }` | One row per hospital in the district, sorted by name |
+| `/hospitals/detail` | `{ district, hospitalId, fromDate?, toDate? }` | One hospital's row; `403` if it's in another district, `404` if unknown |
+| `/trends` | `{ district, fromDate?, toDate? }` | Daily emergency-booking and appointment counts, one point per day including zero days |
+| `/snapshots` | `{ district, label?, fromDate?, toDate? }` | Save a frozen copy of the summary → `201` |
+| `/snapshots/list` | `{ district }` | The district's saved snapshots, newest first |
+| `/snapshots/detail` | `{ district, snapshotId }` | One snapshot; `403` if it belongs to another district |
+| `/snapshots/delete` | `{ district, snapshotId }` | Delete a snapshot → `204`; `403` if it belongs to another district. `POST`, not `DELETE`, because many proxies/clients drop `DELETE` bodies |
 
 ```bash
-curl "http://localhost:8080/api/hospital/analytics/summary?district=Chennai&fromDate=2026-09-01&toDate=2026-09-30" \
-  -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN"
+curl -X POST http://localhost:8080/api/hospital/analytics/summary \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN" \
+  -d '{ "district": "Chennai", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
 ```
 
 ### Summary response
@@ -599,14 +605,15 @@ curl "http://localhost:8080/api/hospital/analytics/summary?district=Chennai&from
 Live analytics are recomputed from current data on every request — bed capacity, hospital status and doctor associations as they stood on a past date can't be reconstructed later. A snapshot freezes the summary at the moment it's saved so admins can keep monthly/quarterly records.
 
 ```bash
-curl -X POST "http://localhost:8080/api/hospital/analytics/snapshots?district=Chennai" \
+curl -X POST http://localhost:8080/api/hospital/analytics/snapshots \
   -H "Content-Type: application/json" \
   -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN" \
-  -d '{ "label": "September 2026 review", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
+  -d '{ "district": "Chennai", "label": "September 2026 review", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
 ```
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
+| `district` | string | yes | |
 | `label` | string | no | max 120 chars |
 | `fromDate` / `toDate` | date | no | Same defaults and limits as the read endpoints |
 
