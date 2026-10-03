@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.uyir.hospital.dto.HospitalMatricsResponse;
+import com.uyir.hospital.model.Hospital;
+import com.uyir.hospital.model.embedded.EmergencyServices;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
@@ -18,6 +20,8 @@ import com.uyir.hospital.repository.HospitalRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -124,5 +128,71 @@ class HospitalMatricsServiceImplTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("fromDate must be on or before toDate");
         verifyNoInteractions(hospitalRepository, doctorRepository, emergencyBookingRepository, appointmentBookingRepository);
+    }
+
+    @Test
+    void getDistrictMatrics_scopesCountsToDistrictHospitals() {
+        Hospital h1 = Hospital.builder().id("h1").active(true)
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).build()).build();
+        Hospital h2 = Hospital.builder().id("h2").active(true).build();
+        Hospital h3 = Hospital.builder().id("h3").active(false)
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).build()).build();
+        Set<String> ids = Set.of("h1", "h2", "h3");
+        when(hospitalRepository.findByAddressDistrictIgnoreCase("Chennai")).thenReturn(List.of(h1, h2, h3));
+        when(doctorRepository.countByHospitalAssociationsHospitalIdIn(ids)).thenReturn(6L);
+        when(doctorRepository.countByHospitalAssociationsHospitalIdInAndActiveTrue(ids)).thenReturn(5L);
+        when(doctorRepository.countByCurrentHospitalIdInAndActiveTrue(ids)).thenReturn(2L);
+        for (EmergencyBookingStatus status : EmergencyBookingStatus.values()) {
+            when(emergencyBookingRepository.countByHospitalIdsStatusRequestedBetween(ids, status, START, END))
+                    .thenReturn(status == EmergencyBookingStatus.COMPLETED ? 4L : 1L);
+        }
+        when(emergencyBookingRepository.countByHospitalIdInAndStatus(ids, EmergencyBookingStatus.REQUESTED))
+                .thenReturn(3L);
+        for (AppointmentStatus status : AppointmentStatus.values()) {
+            when(appointmentBookingRepository.countByHospitalIdsStatusScheduledBetween(ids, status, START, END))
+                    .thenReturn(status == AppointmentStatus.CONFIRMED ? 7L : 0L);
+        }
+        when(appointmentBookingRepository.countByHospitalIdsStatusInScheduledFrom(
+                eq(ids), eq(EnumSet.of(AppointmentStatus.CONFIRMED, AppointmentStatus.RESCHEDULED)), any(Instant.class)))
+                .thenReturn(8L);
+
+        HospitalMatricsResponse matrics = service.getDistrictMatrics("Chennai", FROM, TO);
+
+        assertThat(matrics.getDistrict()).isEqualTo("Chennai");
+        assertThat(matrics.getHospitals().getTotal()).isEqualTo(3);
+        assertThat(matrics.getHospitals().getActive()).isEqualTo(2);
+        assertThat(matrics.getHospitals().getInactive()).isEqualTo(1);
+        // h3 handles emergencies but is inactive
+        assertThat(matrics.getHospitals().getHandlingEmergencies()).isEqualTo(1);
+        assertThat(matrics.getDoctors().getTotal()).isEqualTo(6);
+        assertThat(matrics.getDoctors().getActive()).isEqualTo(5);
+        assertThat(matrics.getDoctors().getCheckedInNow()).isEqualTo(2);
+        assertThat(matrics.getEmergencyBookings().getTotal()).isEqualTo(6);
+        assertThat(matrics.getEmergencyBookings().getByStatus()).containsEntry(EmergencyBookingStatus.COMPLETED, 4L);
+        assertThat(matrics.getEmergencyBookings().getOpenNow()).isEqualTo(3);
+        assertThat(matrics.getAppointments().getTotal()).isEqualTo(7);
+        assertThat(matrics.getAppointments().getUpcoming()).isEqualTo(8);
+    }
+
+    @Test
+    void getDistrictMatrics_unknownDistrict_returnsZerosWithoutCountQueries() {
+        when(hospitalRepository.findByAddressDistrictIgnoreCase("Nowhere")).thenReturn(List.of());
+
+        HospitalMatricsResponse matrics = service.getDistrictMatrics("Nowhere", FROM, TO);
+
+        assertThat(matrics.getDistrict()).isEqualTo("Nowhere");
+        assertThat(matrics.getHospitals().getTotal()).isZero();
+        assertThat(matrics.getDoctors().getTotal()).isZero();
+        assertThat(matrics.getEmergencyBookings().getByStatus()).hasSize(EmergencyBookingStatus.values().length)
+                .allSatisfy((status, count) -> assertThat(count).isZero());
+        assertThat(matrics.getAppointments().getUpcoming()).isZero();
+        verifyNoInteractions(doctorRepository, emergencyBookingRepository, appointmentBookingRepository);
+    }
+
+    @Test
+    void getDistrictMatrics_fromAfterTo_throwsBeforeQuerying() {
+        assertThatThrownBy(() -> service.getDistrictMatrics("Chennai", TO, FROM))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(hospitalRepository);
     }
 }

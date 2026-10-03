@@ -1,5 +1,6 @@
 package com.uyir.hospital.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import java.time.Instant;
@@ -10,12 +11,16 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-// Service-wide (all districts) counts. For district-scoped numbers see DistrictAnalyticsSummary.
+// Service-wide counts, or one district's when 'district' is set.
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class HospitalMatricsResponse {
+
+    // Only set on the district endpoint; omitted from the service-wide response
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String district;
 
     private LocalDate fromDate;
     private LocalDate toDate;

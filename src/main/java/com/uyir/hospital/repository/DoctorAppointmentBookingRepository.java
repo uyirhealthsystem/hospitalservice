@@ -23,4 +23,12 @@ public interface DoctorAppointmentBookingRepository extends MongoRepository<Doct
 
     @Query(value = "{ 'status': { $in: ?0 }, 'appointmentDateTime': { $gte: ?1 } }", count = true)
     long countByStatusInScheduledFrom(Collection<AppointmentStatus> statuses, Instant from);
+
+    @Query(value = "{ 'hospitalId': { $in: ?0 }, 'status': ?1, 'appointmentDateTime': { $gte: ?2, $lt: ?3 } }", count = true)
+    long countByHospitalIdsStatusScheduledBetween(
+            Collection<String> hospitalIds, AppointmentStatus status, Instant from, Instant to);
+
+    @Query(value = "{ 'hospitalId': { $in: ?0 }, 'status': { $in: ?1 }, 'appointmentDateTime': { $gte: ?2 } }", count = true)
+    long countByHospitalIdsStatusInScheduledFrom(
+            Collection<String> hospitalIds, Collection<AppointmentStatus> statuses, Instant from);
 }

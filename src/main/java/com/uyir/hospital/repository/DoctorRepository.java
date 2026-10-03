@@ -16,4 +16,10 @@ public interface DoctorRepository extends MongoRepository<Doctor, String>, Docto
     long countByActiveTrue();
 
     long countByActiveTrueAndCurrentHospitalIdIsNotNull();
+
+    long countByHospitalAssociationsHospitalIdIn(Collection<String> hospitalIds);
+
+    long countByHospitalAssociationsHospitalIdInAndActiveTrue(Collection<String> hospitalIds);
+
+    long countByCurrentHospitalIdInAndActiveTrue(Collection<String> hospitalIds);
 }

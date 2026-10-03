@@ -615,7 +615,7 @@
 		},
 		{
 			"name": "Hospital Matrics",
-			"description": "Service-wide (all districts) business matrics in one JSON object. POST with optional { fromDate, toDate } body (empty body allowed). Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id.",
+			"description": "Business matrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id.",
 			"item": [
 				{
 					"name": "Get Hospital Matrics",
@@ -665,6 +665,59 @@
 								"api",
 								"hospital",
 								"matrics"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get District Matrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{adminId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							}
+						],
+						"description": "Same matrics scoped to one district (address.district, case-insensitive). district is required; fromDate/toDate optional.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/matrics/district",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"matrics",
+								"district"
 							]
 						}
 					}

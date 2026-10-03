@@ -6,4 +6,6 @@ import java.time.LocalDate;
 public interface HospitalMatricsService {
 
     HospitalMatricsResponse getMatrics(LocalDate fromDate, LocalDate toDate);
+
+    HospitalMatricsResponse getDistrictMatrics(String district, LocalDate fromDate, LocalDate toDate);
 }

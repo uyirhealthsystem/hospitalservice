@@ -101,4 +101,45 @@ class HospitalMatricsControllerTest {
     void matrics_viaGet_isNotAllowed() throws Exception {
         mockMvc.perform(get(BASE)).andExpect(status().isMethodNotAllowed());
     }
+
+    @Test
+    void districtMatrics_passesTrimmedDistrictAndDates() throws Exception {
+        when(matricsService.getDistrictMatrics("Chennai", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(HospitalMatricsResponse.builder().district("Chennai").build());
+
+        mockMvc.perform(post(BASE + "/district").contentType("application/json")
+                        .content("{\"district\":\" Chennai \",\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.district").value("Chennai"));
+    }
+
+    @Test
+    void districtMatrics_missingDistrict_returns400() throws Exception {
+        mockMvc.perform(post(BASE + "/district").contentType("application/json").content("{}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(matricsService);
+    }
+
+    @Test
+    void districtMatrics_noBody_returns400() throws Exception {
+        mockMvc.perform(post(BASE + "/district").contentType("application/json")).andExpect(status().isBadRequest());
+        verifyNoInteractions(matricsService);
+    }
+
+    @Test
+    void districtMatrics_notAdmin_returns403() throws Exception {
+        when(currentUserContext.requireAnyRole(Role.ADMIN, Role.SUPER_ADMIN))
+                .thenThrow(new ForbiddenException("This action requires one of the roles [ADMIN, SUPER_ADMIN]"));
+
+        mockMvc.perform(post(BASE + "/district").contentType("application/json").content("{\"district\":\"Chennai\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(matricsService);
+    }
+
+    @Test
+    void serviceWideMatrics_omitsDistrictField() throws Exception {
+        when(matricsService.getMatrics(isNull(), isNull())).thenReturn(new HospitalMatricsResponse());
+
+        mockMvc.perform(post(BASE)).andExpect(status().isOk()).andExpect(jsonPath("$.district").doesNotExist());
+    }
 }

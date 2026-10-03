@@ -22,4 +22,10 @@ public interface EmergencyBookingRepository extends MongoRepository<EmergencyBoo
 
     @Query(value = "{ 'status': ?0, 'requestedAt': { $gte: ?1, $lt: ?2 } }", count = true)
     long countByStatusRequestedBetween(EmergencyBookingStatus status, Instant from, Instant to);
+
+    long countByHospitalIdInAndStatus(Collection<String> hospitalIds, EmergencyBookingStatus status);
+
+    @Query(value = "{ 'hospitalId': { $in: ?0 }, 'status': ?1, 'requestedAt': { $gte: ?2, $lt: ?3 } }", count = true)
+    long countByHospitalIdsStatusRequestedBetween(
+            Collection<String> hospitalIds, EmergencyBookingStatus status, Instant from, Instant to);
 }

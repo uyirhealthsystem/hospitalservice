@@ -628,7 +628,7 @@ Response: `{ id, district, label, fromDate, toDate, summary, createdBy, createdA
 
 Base URL: `/api/hospital/matrics` (contains `hospital` per the project convention)
 
-Service-wide business matrics across **all districts** — one call, one JSON object. For district-scoped numbers use the [Analytics API](#hospital-analytics-api-reference) instead.
+Business matrics in one JSON object — either across **all districts** or for **one district**. For per-hospital breakdowns and daily trends use the [Analytics API](#hospital-analytics-api-reference).
 
 | Requirement | Value |
 |---|---|
@@ -637,7 +637,7 @@ Service-wide business matrics across **all districts** — one call, one JSON ob
 
 `POST` with an optional JSON body `{ fromDate?, toDate? }` — an empty body or no body at all is fine. Same date rules as Analytics: ISO `yyyy-MM-dd`, inclusive, **IST** days, defaults to the last 30 days, `fromDate` after `toDate` or a range over 366 days → `400`. Only the booking `total` / `byStatus` counts use the range; everything else is a *current* figure.
 
-Every number is a MongoDB count query — no documents are loaded, so it stays cheap as data grows.
+Doctors and bookings are counted with MongoDB count queries — those documents are never loaded, so it stays cheap as data grows.
 
 ```bash
 curl -X POST http://localhost:8080/api/hospital/matrics \
@@ -674,5 +674,30 @@ curl -X POST http://localhost:8080/api/hospital/matrics \
 | `emergencyBookings.openNow` | All bookings currently `REQUESTED`, ignoring the range |
 | `appointments.total` / `byStatus` | Scheduled (`appointmentDateTime`) within the range; every status is always present |
 | `appointments.upcoming` | `CONFIRMED` or `RESCHEDULED` appointments scheduled from now on, ignoring the range |
+
+## District matrics
+
+`POST /api/hospital/matrics/district` with `{ district, fromDate?, toDate? }` — `district` is **required** (missing or blank → `400`; no body → `400`). Same headers, date rules and response shape as above, plus a `district` field (the service-wide response leaves `district` out).
+
+Same district rule as Analytics: hospitals whose `address.district` matches, case-insensitively. Doctors are counted if associated with any of those hospitals (`checkedInNow` = checked into one of them); bookings and appointments are counted by `hospitalId`. An unknown district returns all zeros, not `404`.
+
+> As with Analytics, **district authorisation is the caller's job** — the Admin service must only pass a district the admin is allowed to manage.
+
+```bash
+curl -X POST http://localhost:8080/api/hospital/matrics/district \n  -H "Content-Type: application/json" \n  -H "X-User-Id: admin-1" -H "X-User-Role: ADMIN" \n  -d '{"district":"Chennai","fromDate":"2026-09-01","toDate":"2026-09-30"}'
+```
+
+```json
+{
+  "district": "Chennai",
+  "fromDate": "2026-09-01",
+  "toDate": "2026-09-30",
+  "generatedAt": "2026-10-03T06:15:00Z",
+  "hospitals": { "total": 7, "active": 6, "inactive": 1, "handlingEmergencies": 6 },
+  "doctors": { "total": 12, "active": 11, "checkedInNow": 4 },
+  "emergencyBookings": { "total": 9, "byStatus": { "REQUESTED": 1, "CANCELLED": 2, "COMPLETED": 6 }, "openNow": 1 },
+  "appointments": { "total": 40, "byStatus": { "CONFIRMED": 15, "RESCHEDULED": 3, "CANCELLED": 4, "COMPLETED": 18 }, "upcoming": 17 }
+}
+```
 
 > **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/hospital/actuator`, e.g. `/hospital/actuator/health`, so every path contains `hospital`.
