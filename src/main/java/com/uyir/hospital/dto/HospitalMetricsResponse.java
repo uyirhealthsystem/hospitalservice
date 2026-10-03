@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class HospitalMatricsResponse {
+public class HospitalMetricsResponse {
 
     // Only set on the district endpoint; omitted from the service-wide response
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -26,16 +26,16 @@ public class HospitalMatricsResponse {
     private LocalDate toDate;
     private Instant generatedAt;
 
-    private HospitalMatrics hospitals;
-    private DoctorMatrics doctors;
-    private EmergencyBookingMatrics emergencyBookings;
-    private AppointmentMatrics appointments;
+    private HospitalMetrics hospitals;
+    private DoctorMetrics doctors;
+    private EmergencyBookingMetrics emergencyBookings;
+    private AppointmentMetrics appointments;
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class HospitalMatrics {
+    public static class HospitalMetrics {
         private long total;
         private long active;
         private long inactive;
@@ -47,7 +47,7 @@ public class HospitalMatricsResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class DoctorMatrics {
+    public static class DoctorMetrics {
         private long total;
         private long active;
         // Active doctors checked into any hospital right now
@@ -58,7 +58,7 @@ public class HospitalMatricsResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class EmergencyBookingMatrics {
+    public static class EmergencyBookingMetrics {
         // Requested within the date range
         private long total;
         private Map<EmergencyBookingStatus, Long> byStatus;
@@ -70,7 +70,7 @@ public class HospitalMatricsResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class AppointmentMatrics {
+    public static class AppointmentMetrics {
         // Scheduled within the date range
         private long total;
         private Map<AppointmentStatus, Long> byStatus;

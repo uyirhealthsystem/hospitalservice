@@ -614,11 +614,11 @@
 			]
 		},
 		{
-			"name": "Hospital Matrics",
-			"description": "Business matrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id.",
+			"name": "Hospital Metrics",
+			"description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id.",
 			"item": [
 				{
-					"name": "Get Hospital Matrics",
+					"name": "Get Hospital Metrics",
 					"event": [
 						{
 							"listen": "test",
@@ -657,20 +657,20 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/matrics",
+							"raw": "{{baseUrl}}/api/hospital/metrics",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
 								"hospital",
-								"matrics"
+								"metrics"
 							]
 						}
 					}
 				},
 				{
-					"name": "Get District Matrics",
+					"name": "Get District Metrics",
 					"event": [
 						{
 							"listen": "test",
@@ -698,7 +698,7 @@
 								"value": "ADMIN"
 							}
 						],
-						"description": "Same matrics scoped to one district (address.district, case-insensitive). district is required; fromDate/toDate optional.",
+						"description": "Same metrics scoped to one district (address.district, case-insensitive). district is required; fromDate/toDate optional.",
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"district\": \"{{district}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
@@ -709,14 +709,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/matrics/district",
+							"raw": "{{baseUrl}}/api/hospital/metrics/district",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
 								"hospital",
-								"matrics",
+								"metrics",
 								"district"
 							]
 						}

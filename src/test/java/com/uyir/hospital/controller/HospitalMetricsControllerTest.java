@@ -9,12 +9,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.uyir.hospital.dto.HospitalMatricsResponse;
-import com.uyir.hospital.dto.HospitalMatricsResponse.HospitalMatrics;
+import com.uyir.hospital.dto.HospitalMetricsResponse;
+import com.uyir.hospital.dto.HospitalMetricsResponse.HospitalMetrics;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
-import com.uyir.hospital.service.HospitalMatricsService;
+import com.uyir.hospital.service.HospitalMetricsService;
 import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,17 +24,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(HospitalMatricsController.class)
+@WebMvcTest(HospitalMetricsController.class)
 @AutoConfigureMockMvc(addFilters = false)
-class HospitalMatricsControllerTest {
+class HospitalMetricsControllerTest {
 
-    private static final String BASE = "/api/hospital/matrics";
+    private static final String BASE = "/api/hospital/metrics";
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
-    private HospitalMatricsService matricsService;
+    private HospitalMetricsService metricsService;
 
     @MockitoBean
     private CurrentUserContext currentUserContext;
@@ -45,10 +45,10 @@ class HospitalMatricsControllerTest {
     }
 
     @Test
-    void matrics_passesDatesFromBody() throws Exception {
-        when(matricsService.getMatrics(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
-                .thenReturn(HospitalMatricsResponse.builder()
-                        .hospitals(HospitalMatrics.builder().total(5).build())
+    void metrics_passesDatesFromBody() throws Exception {
+        when(metricsService.getMetrics(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(HospitalMetricsResponse.builder()
+                        .hospitals(HospitalMetrics.builder().total(5).build())
                         .build());
 
         mockMvc.perform(post(BASE).contentType("application/json")
@@ -58,29 +58,29 @@ class HospitalMatricsControllerTest {
     }
 
     @Test
-    void matrics_emptyJsonBody_passesNullDates() throws Exception {
-        when(matricsService.getMatrics(isNull(), isNull())).thenReturn(new HospitalMatricsResponse());
+    void metrics_emptyJsonBody_passesNullDates() throws Exception {
+        when(metricsService.getMetrics(isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
 
         mockMvc.perform(post(BASE).contentType("application/json").content("{}")).andExpect(status().isOk());
     }
 
     @Test
-    void matrics_noBody_passesNullDates() throws Exception {
-        when(matricsService.getMatrics(isNull(), isNull())).thenReturn(new HospitalMatricsResponse());
+    void metrics_noBody_passesNullDates() throws Exception {
+        when(metricsService.getMetrics(isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
 
         mockMvc.perform(post(BASE)).andExpect(status().isOk());
     }
 
     @Test
-    void matrics_malformedDate_returns400() throws Exception {
+    void metrics_malformedDate_returns400() throws Exception {
         mockMvc.perform(post(BASE).contentType("application/json").content("{\"fromDate\":\"01-09-2026\"}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(matricsService);
+        verifyNoInteractions(metricsService);
     }
 
     @Test
-    void matrics_invalidRange_returns400() throws Exception {
-        when(matricsService.getMatrics(any(), any()))
+    void metrics_invalidRange_returns400() throws Exception {
+        when(metricsService.getMetrics(any(), any()))
                 .thenThrow(new IllegalArgumentException("fromDate must be on or before toDate"));
 
         mockMvc.perform(post(BASE).contentType("application/json")
@@ -89,23 +89,23 @@ class HospitalMatricsControllerTest {
     }
 
     @Test
-    void matrics_notAdmin_returns403() throws Exception {
+    void metrics_notAdmin_returns403() throws Exception {
         when(currentUserContext.requireAnyRole(Role.ADMIN, Role.SUPER_ADMIN))
                 .thenThrow(new ForbiddenException("This action requires one of the roles [ADMIN, SUPER_ADMIN]"));
 
         mockMvc.perform(post(BASE).contentType("application/json").content("{}")).andExpect(status().isForbidden());
-        verifyNoInteractions(matricsService);
+        verifyNoInteractions(metricsService);
     }
 
     @Test
-    void matrics_viaGet_isNotAllowed() throws Exception {
+    void metrics_viaGet_isNotAllowed() throws Exception {
         mockMvc.perform(get(BASE)).andExpect(status().isMethodNotAllowed());
     }
 
     @Test
-    void districtMatrics_passesTrimmedDistrictAndDates() throws Exception {
-        when(matricsService.getDistrictMatrics("Chennai", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
-                .thenReturn(HospitalMatricsResponse.builder().district("Chennai").build());
+    void districtMetrics_passesTrimmedDistrictAndDates() throws Exception {
+        when(metricsService.getDistrictMetrics("Chennai", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(HospitalMetricsResponse.builder().district("Chennai").build());
 
         mockMvc.perform(post(BASE + "/district").contentType("application/json")
                         .content("{\"district\":\" Chennai \",\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}"))
@@ -114,31 +114,31 @@ class HospitalMatricsControllerTest {
     }
 
     @Test
-    void districtMatrics_missingDistrict_returns400() throws Exception {
+    void districtMetrics_missingDistrict_returns400() throws Exception {
         mockMvc.perform(post(BASE + "/district").contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(matricsService);
+        verifyNoInteractions(metricsService);
     }
 
     @Test
-    void districtMatrics_noBody_returns400() throws Exception {
+    void districtMetrics_noBody_returns400() throws Exception {
         mockMvc.perform(post(BASE + "/district").contentType("application/json")).andExpect(status().isBadRequest());
-        verifyNoInteractions(matricsService);
+        verifyNoInteractions(metricsService);
     }
 
     @Test
-    void districtMatrics_notAdmin_returns403() throws Exception {
+    void districtMetrics_notAdmin_returns403() throws Exception {
         when(currentUserContext.requireAnyRole(Role.ADMIN, Role.SUPER_ADMIN))
                 .thenThrow(new ForbiddenException("This action requires one of the roles [ADMIN, SUPER_ADMIN]"));
 
         mockMvc.perform(post(BASE + "/district").contentType("application/json").content("{\"district\":\"Chennai\"}"))
                 .andExpect(status().isForbidden());
-        verifyNoInteractions(matricsService);
+        verifyNoInteractions(metricsService);
     }
 
     @Test
-    void serviceWideMatrics_omitsDistrictField() throws Exception {
-        when(matricsService.getMatrics(isNull(), isNull())).thenReturn(new HospitalMatricsResponse());
+    void serviceWideMetrics_omitsDistrictField() throws Exception {
+        when(metricsService.getMetrics(isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
 
         mockMvc.perform(post(BASE)).andExpect(status().isOk()).andExpect(jsonPath("$.district").doesNotExist());
     }

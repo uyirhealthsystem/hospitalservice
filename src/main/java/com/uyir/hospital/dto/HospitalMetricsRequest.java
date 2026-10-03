@@ -1,6 +1,5 @@
 package com.uyir.hospital.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,13 +10,10 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DistrictMatricsRequest {
+public class HospitalMetricsRequest {
 
-    // Passed by the Admin service - the district this admin manages
-    @NotBlank
-    private String district;
-
-    // Both optional, yyyy-MM-dd, inclusive (IST); defaults to the last 30 days
+    // Both optional, yyyy-MM-dd, inclusive (IST); defaults to the last 30 days.
+    // Only the booking activity counts are windowed - hospital/doctor counts are always "now".
     private LocalDate fromDate;
     private LocalDate toDate;
 }

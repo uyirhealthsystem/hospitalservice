@@ -624,11 +624,11 @@ Response: `{ id, district, label, fromDate, toDate, summary, createdBy, createdA
 
 ---
 
-# Hospital Matrics API Reference
+# Hospital Metrics API Reference
 
-Base URL: `/api/hospital/matrics` (contains `hospital` per the project convention)
+Base URL: `/api/hospital/metrics` (contains `hospital` per the project convention)
 
-Business matrics in one JSON object — either across **all districts** or for **one district**. For per-hospital breakdowns and daily trends use the [Analytics API](#hospital-analytics-api-reference).
+Business metrics in one JSON object — either across **all districts** or for **one district**. For per-hospital breakdowns and daily trends use the [Analytics API](#hospital-analytics-api-reference).
 
 | Requirement | Value |
 |---|---|
@@ -640,7 +640,7 @@ Business matrics in one JSON object — either across **all districts** or for *
 Doctors and bookings are counted with MongoDB count queries — those documents are never loaded, so it stays cheap as data grows.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/matrics \
+curl -X POST http://localhost:8080/api/hospital/metrics \
   -H "Content-Type: application/json" \
   -H "X-User-Id: admin-1" -H "X-User-Role: SUPER_ADMIN" \
   -d '{"fromDate":"2026-09-01","toDate":"2026-09-30"}'
@@ -675,16 +675,16 @@ curl -X POST http://localhost:8080/api/hospital/matrics \
 | `appointments.total` / `byStatus` | Scheduled (`appointmentDateTime`) within the range; every status is always present |
 | `appointments.upcoming` | `CONFIRMED` or `RESCHEDULED` appointments scheduled from now on, ignoring the range |
 
-## District matrics
+## District metrics
 
-`POST /api/hospital/matrics/district` with `{ district, fromDate?, toDate? }` — `district` is **required** (missing or blank → `400`; no body → `400`). Same headers, date rules and response shape as above, plus a `district` field (the service-wide response leaves `district` out).
+`POST /api/hospital/metrics/district` with `{ district, fromDate?, toDate? }` — `district` is **required** (missing or blank → `400`; no body → `400`). Same headers, date rules and response shape as above, plus a `district` field (the service-wide response leaves `district` out).
 
 Same district rule as Analytics: hospitals whose `address.district` matches, case-insensitively. Doctors are counted if associated with any of those hospitals (`checkedInNow` = checked into one of them); bookings and appointments are counted by `hospitalId`. An unknown district returns all zeros, not `404`.
 
 > As with Analytics, **district authorisation is the caller's job** — the Admin service must only pass a district the admin is allowed to manage.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/matrics/district \n  -H "Content-Type: application/json" \n  -H "X-User-Id: admin-1" -H "X-User-Role: ADMIN" \n  -d '{"district":"Chennai","fromDate":"2026-09-01","toDate":"2026-09-30"}'
+curl -X POST http://localhost:8080/api/hospital/metrics/district \n  -H "Content-Type: application/json" \n  -H "X-User-Id: admin-1" -H "X-User-Role: ADMIN" \n  -d '{"district":"Chennai","fromDate":"2026-09-01","toDate":"2026-09-30"}'
 ```
 
 ```json

@@ -1,10 +1,10 @@
 package com.uyir.hospital.service.impl;
 
-import com.uyir.hospital.dto.HospitalMatricsResponse;
-import com.uyir.hospital.dto.HospitalMatricsResponse.AppointmentMatrics;
-import com.uyir.hospital.dto.HospitalMatricsResponse.DoctorMatrics;
-import com.uyir.hospital.dto.HospitalMatricsResponse.EmergencyBookingMatrics;
-import com.uyir.hospital.dto.HospitalMatricsResponse.HospitalMatrics;
+import com.uyir.hospital.dto.HospitalMetricsResponse;
+import com.uyir.hospital.dto.HospitalMetricsResponse.AppointmentMetrics;
+import com.uyir.hospital.dto.HospitalMetricsResponse.DoctorMetrics;
+import com.uyir.hospital.dto.HospitalMetricsResponse.EmergencyBookingMetrics;
+import com.uyir.hospital.dto.HospitalMetricsResponse.HospitalMetrics;
 import com.uyir.hospital.model.Hospital;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
@@ -12,7 +12,7 @@ import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
 import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.EmergencyBookingRepository;
 import com.uyir.hospital.repository.HospitalRepository;
-import com.uyir.hospital.service.HospitalMatricsService;
+import com.uyir.hospital.service.HospitalMetricsService;
 import com.uyir.hospital.service.impl.HospitalAnalyticsServiceImpl.DateRange;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 // never loaded into memory, so this stays cheap as the collections grow.
 @Service
 @RequiredArgsConstructor
-public class HospitalMatricsServiceImpl implements HospitalMatricsService {
+public class HospitalMetricsServiceImpl implements HospitalMetricsService {
 
     private static final Set<AppointmentStatus> UPCOMING_STATUSES =
             EnumSet.of(AppointmentStatus.CONFIRMED, AppointmentStatus.RESCHEDULED);
@@ -41,7 +41,7 @@ public class HospitalMatricsServiceImpl implements HospitalMatricsService {
     private final DoctorAppointmentBookingRepository appointmentBookingRepository;
 
     @Override
-    public HospitalMatricsResponse getMatrics(LocalDate fromDate, LocalDate toDate) {
+    public HospitalMetricsResponse getMetrics(LocalDate fromDate, LocalDate toDate) {
         DateRange range = DateRange.resolve(fromDate, toDate);
         Instant now = Instant.now();
 
@@ -53,27 +53,27 @@ public class HospitalMatricsServiceImpl implements HospitalMatricsService {
         Map<AppointmentStatus, Long> appointmentsByStatus = countPerStatus(AppointmentStatus.class,
                 status -> appointmentBookingRepository.countByStatusScheduledBetween(status, range.start(), range.end()));
 
-        return HospitalMatricsResponse.builder()
+        return HospitalMetricsResponse.builder()
                 .fromDate(range.from())
                 .toDate(range.to())
                 .generatedAt(now)
-                .hospitals(HospitalMatrics.builder()
+                .hospitals(HospitalMetrics.builder()
                         .total(totalHospitals)
                         .active(activeHospitals)
                         .inactive(totalHospitals - activeHospitals)
                         .handlingEmergencies(hospitalRepository.countByActiveTrueAndEmergencyServicesHandlesEmergenciesTrue())
                         .build())
-                .doctors(DoctorMatrics.builder()
+                .doctors(DoctorMetrics.builder()
                         .total(doctorRepository.count())
                         .active(doctorRepository.countByActiveTrue())
                         .checkedInNow(doctorRepository.countByActiveTrueAndCurrentHospitalIdIsNotNull())
                         .build())
-                .emergencyBookings(EmergencyBookingMatrics.builder()
+                .emergencyBookings(EmergencyBookingMetrics.builder()
                         .total(sum(emergencyByStatus))
                         .byStatus(emergencyByStatus)
                         .openNow(emergencyBookingRepository.countByStatus(EmergencyBookingStatus.REQUESTED))
                         .build())
-                .appointments(AppointmentMatrics.builder()
+                .appointments(AppointmentMetrics.builder()
                         .total(sum(appointmentsByStatus))
                         .byStatus(appointmentsByStatus)
                         .upcoming(appointmentBookingRepository.countByStatusInScheduledFrom(UPCOMING_STATUSES, now))
@@ -84,7 +84,7 @@ public class HospitalMatricsServiceImpl implements HospitalMatricsService {
     // Same district rule as the analytics: Hospital.address.district, case-insensitive. A district
     // has few hospitals, so those are loaded; doctors and bookings are counted by hospital id.
     @Override
-    public HospitalMatricsResponse getDistrictMatrics(String district, LocalDate fromDate, LocalDate toDate) {
+    public HospitalMetricsResponse getDistrictMetrics(String district, LocalDate fromDate, LocalDate toDate) {
         DateRange range = DateRange.resolve(fromDate, toDate);
         Instant now = Instant.now();
 
@@ -101,12 +101,12 @@ public class HospitalMatricsServiceImpl implements HospitalMatricsService {
                 status -> none ? 0 : appointmentBookingRepository.countByHospitalIdsStatusScheduledBetween(
                         ids, status, range.start(), range.end()));
 
-        return HospitalMatricsResponse.builder()
+        return HospitalMetricsResponse.builder()
                 .district(district)
                 .fromDate(range.from())
                 .toDate(range.to())
                 .generatedAt(now)
-                .hospitals(HospitalMatrics.builder()
+                .hospitals(HospitalMetrics.builder()
                         .total(hospitals.size())
                         .active(activeHospitals.size())
                         .inactive(hospitals.size() - activeHospitals.size())
@@ -115,18 +115,18 @@ public class HospitalMatricsServiceImpl implements HospitalMatricsService {
                                         && h.getEmergencyServices().isHandlesEmergencies())
                                 .count())
                         .build())
-                .doctors(DoctorMatrics.builder()
+                .doctors(DoctorMetrics.builder()
                         .total(none ? 0 : doctorRepository.countByHospitalAssociationsHospitalIdIn(ids))
                         .active(none ? 0 : doctorRepository.countByHospitalAssociationsHospitalIdInAndActiveTrue(ids))
                         .checkedInNow(none ? 0 : doctorRepository.countByCurrentHospitalIdInAndActiveTrue(ids))
                         .build())
-                .emergencyBookings(EmergencyBookingMatrics.builder()
+                .emergencyBookings(EmergencyBookingMetrics.builder()
                         .total(sum(emergencyByStatus))
                         .byStatus(emergencyByStatus)
                         .openNow(none ? 0 : emergencyBookingRepository.countByHospitalIdInAndStatus(
                                 ids, EmergencyBookingStatus.REQUESTED))
                         .build())
-                .appointments(AppointmentMatrics.builder()
+                .appointments(AppointmentMetrics.builder()
                         .total(sum(appointmentsByStatus))
                         .byStatus(appointmentsByStatus)
                         .upcoming(none ? 0 : appointmentBookingRepository.countByHospitalIdsStatusInScheduledFrom(
