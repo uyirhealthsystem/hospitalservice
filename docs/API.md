@@ -621,3 +621,58 @@ Response: `{ id, district, label, fromDate, toDate, summary, createdBy, createdA
 
 > **Computed in-app, not via Mongo aggregation.** Each request loads the district's hospitals, their doctors, and the bookings in the date range, then counts in Java. Fine for a district's volume today; if a district reaches hundreds of thousands of bookings per range, move the counting into `$group` aggregation pipelines.
 
+
+---
+
+# Hospital Matrics API Reference
+
+Base URL: `/api/hospital/matrics` (contains `hospital` per the project convention)
+
+Service-wide business matrics across **all districts** — one call, one JSON object. For district-scoped numbers use the [Analytics API](#hospital-analytics-api-reference) instead.
+
+| Requirement | Value |
+|---|---|
+| `X-User-Role` header | `ADMIN` or `SUPER_ADMIN` — any other role → `403` |
+| `X-User-Id` header | required |
+
+`POST` with an optional JSON body `{ fromDate?, toDate? }` — an empty body or no body at all is fine. Same date rules as Analytics: ISO `yyyy-MM-dd`, inclusive, **IST** days, defaults to the last 30 days, `fromDate` after `toDate` or a range over 366 days → `400`. Only the booking `total` / `byStatus` counts use the range; everything else is a *current* figure.
+
+Every number is a MongoDB count query — no documents are loaded, so it stays cheap as data grows.
+
+```bash
+curl -X POST http://localhost:8080/api/hospital/matrics \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: admin-1" -H "X-User-Role: SUPER_ADMIN" \
+  -d '{"fromDate":"2026-09-01","toDate":"2026-09-30"}'
+```
+
+```json
+{
+  "fromDate": "2026-09-01",
+  "toDate": "2026-09-30",
+  "generatedAt": "2026-10-03T06:15:00Z",
+  "hospitals": { "total": 120, "active": 112, "inactive": 8, "handlingEmergencies": 64 },
+  "doctors": { "total": 940, "active": 901, "checkedInNow": 233 },
+  "emergencyBookings": {
+    "total": 418,
+    "byStatus": { "REQUESTED": 12, "CANCELLED": 31, "COMPLETED": 375 },
+    "openNow": 15
+  },
+  "appointments": {
+    "total": 2210,
+    "byStatus": { "CONFIRMED": 640, "RESCHEDULED": 95, "CANCELLED": 180, "COMPLETED": 1295 },
+    "upcoming": 702
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `hospitals.handlingEmergencies` | Active hospitals with `emergencyServices.handlesEmergencies = true` |
+| `doctors.checkedInNow` | Active doctors with a `currentHospitalId` (checked in anywhere) |
+| `emergencyBookings.total` / `byStatus` | Requested (`requestedAt`) within the range; every status is always present |
+| `emergencyBookings.openNow` | All bookings currently `REQUESTED`, ignoring the range |
+| `appointments.total` / `byStatus` | Scheduled (`appointmentDateTime`) within the range; every status is always present |
+| `appointments.upcoming` | `CONFIRMED` or `RESCHEDULED` appointments scheduled from now on, ignoring the range |
+
+> **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/hospital/actuator`, e.g. `/hospital/actuator/health`, so every path contains `hospital`.

@@ -16,4 +16,8 @@ public interface HospitalRepository extends MongoRepository<Hospital, String>, H
     List<Hospital> findByAddressLocationNear(Point point, Distance distance);
 
     List<Hospital> findByAddressDistrictIgnoreCase(String district);
+
+    long countByActiveTrue();
+
+    long countByActiveTrueAndEmergencyServicesHandlesEmergenciesTrue();
 }

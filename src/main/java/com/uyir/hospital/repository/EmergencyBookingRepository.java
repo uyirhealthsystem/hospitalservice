@@ -1,6 +1,7 @@
 package com.uyir.hospital.repository;
 
 import com.uyir.hospital.model.EmergencyBooking;
+import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -16,4 +17,9 @@ public interface EmergencyBookingRepository extends MongoRepository<EmergencyBoo
     // Half-open [from, to) so consecutive day/period windows never double-count a booking.
     @Query("{ 'hospitalId': { $in: ?0 }, 'requestedAt': { $gte: ?1, $lt: ?2 } }")
     List<EmergencyBooking> findByHospitalIdsRequestedBetween(Collection<String> hospitalIds, Instant from, Instant to);
+
+    long countByStatus(EmergencyBookingStatus status);
+
+    @Query(value = "{ 'status': ?0, 'requestedAt': { $gte: ?1, $lt: ?2 } }", count = true)
+    long countByStatusRequestedBetween(EmergencyBookingStatus status, Instant from, Instant to);
 }
