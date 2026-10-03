@@ -85,6 +85,17 @@ Uses the `2dsphere` index on `address.location` (a GeoJSON `Point`, `[longitude,
 curl "http://localhost:8080/api/hospitals/nearby?longitude=80.27&latitude=13.08&radiusKm=5"
 ```
 
+## Hospitals by district
+
+`GET /api/hospitals/district/{district}` — optional `?active=true|false` (omit for both)
+
+Every hospital whose `address.district` matches `{district}`, case-insensitively, as a plain array of full `HospitalResponse` records sorted by `hospitalName` — **not paginated**. An unknown district returns `[]`. URL-encode spaces (`/district/The%20Nilgiris`).
+
+```bash
+curl "http://localhost:8080/api/hospitals/district/Chennai"
+curl "http://localhost:8080/api/hospitals/district/Chennai?active=true"
+```
+
 ## Update a hospital
 
 `PUT /api/hospitals/{id}` — full replace of the mutable fields (same body shape as create, `surgicalNetwork` included). 404 if not found, 409 if the new `registrationNumber` collides with a different hospital, 400 on validation failure.

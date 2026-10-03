@@ -30,6 +30,9 @@ public interface HospitalService {
 
     List<HospitalResponse> findNearby(double longitude, double latitude, double radiusKm);
 
+    // Hospitals whose address.district matches (case-insensitive), sorted by name. active == null returns both.
+    List<HospitalResponse> findByDistrict(String district, Boolean active);
+
     // Lets a hospital turn its own emergency-sos visibility on/off without resending the full
     // HospitalRequest - toggling this off immediately excludes the hospital from
     // EmergencySosService.findAvailableHospitals results.

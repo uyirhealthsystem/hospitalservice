@@ -154,6 +154,31 @@ class HospitalControllerTest {
     }
 
     @Test
+    void findByDistrict_returnsHospitalsInDistrict() throws Exception {
+        when(hospitalService.findByDistrict("Chennai", null)).thenReturn(List.of(response("h1"), response("h2")));
+
+        mockMvc.perform(get("/api/hospitals/district/Chennai"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value("h1"));
+    }
+
+    @Test
+    void findByDistrict_passesActiveFilterAndDecodesSpaces() throws Exception {
+        when(hospitalService.findByDistrict("The Nilgiris", true)).thenReturn(List.of(response("h1")));
+
+        mockMvc.perform(get("/api/hospitals/district/The Nilgiris").param("active", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("h1"));
+    }
+
+    @Test
+    void findByDistrict_invalidActive_returns400() throws Exception {
+        mockMvc.perform(get("/api/hospitals/district/Chennai").param("active", "maybe"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void findNearby_validParams_delegatesToService() throws Exception {
         when(hospitalService.findNearby(anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(List.of(response("h1")));

@@ -69,6 +69,14 @@ public class HospitalController {
         return hospitalService.findNearby(longitude, latitude, radiusKm);
     }
 
+    // All hospitals in a district (address.district, case-insensitive), sorted by name.
+    // Optional ?active=true|false; omit it to get both.
+    @GetMapping("/district/{district}")
+    public List<HospitalResponse> findByDistrict(
+            @PathVariable String district, @RequestParam(required = false) Boolean active) {
+        return hospitalService.findByDistrict(district, active);
+    }
+
     @PutMapping("/{id}")
     public HospitalResponse update(@PathVariable String id, @Valid @RequestBody HospitalRequest request) {
         return hospitalService.update(id, request);

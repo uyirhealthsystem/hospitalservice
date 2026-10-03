@@ -14,6 +14,7 @@ import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.repository.HospitalSearchCriteria;
 import com.uyir.hospital.service.HospitalService;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -124,6 +125,18 @@ public class HospitalServiceImpl implements HospitalService {
         Distance distance = new Distance(radiusKm, Metrics.KILOMETERS);
 
         return hospitalRepository.findByAddressLocationNear(point, distance).stream()
+                .map(hospitalMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    public List<HospitalResponse> findByDistrict(String district, Boolean active) {
+        if (district == null || district.isBlank()) {
+            throw new IllegalArgumentException("district must not be blank");
+        }
+        return hospitalRepository.findByAddressDistrictIgnoreCase(district.trim()).stream()
+                .filter(hospital -> active == null || hospital.isActive() == active)
+                .sorted(Comparator.comparing(Hospital::getHospitalName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
                 .map(hospitalMapper::toResponse)
                 .toList();
     }

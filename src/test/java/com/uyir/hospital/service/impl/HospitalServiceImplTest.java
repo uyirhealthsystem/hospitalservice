@@ -238,6 +238,33 @@ class HospitalServiceImplTest {
     }
 
     @Test
+    void findByDistrict_trimsAndSortsByName() {
+        when(hospitalRepository.findByAddressDistrictIgnoreCase("Chennai")).thenReturn(List.of(
+                Hospital.builder().id("h1").hospitalName("Zen Hospital").active(true).build(),
+                Hospital.builder().id("h2").hospitalName("apollo").active(false).build()));
+
+        List<HospitalResponse> result = service.findByDistrict(" Chennai ", null);
+
+        assertThat(result).extracting(HospitalResponse::getId).containsExactly("h2", "h1");
+    }
+
+    @Test
+    void findByDistrict_activeFilter() {
+        when(hospitalRepository.findByAddressDistrictIgnoreCase("Chennai")).thenReturn(List.of(
+                Hospital.builder().id("h1").hospitalName("A").active(true).build(),
+                Hospital.builder().id("h2").hospitalName("B").active(false).build()));
+
+        assertThat(service.findByDistrict("Chennai", true)).extracting(HospitalResponse::getId).containsExactly("h1");
+        assertThat(service.findByDistrict("Chennai", false)).extracting(HospitalResponse::getId).containsExactly("h2");
+    }
+
+    @Test
+    void findByDistrict_blank_throwsWithoutQuerying() {
+        assertThatThrownBy(() -> service.findByDistrict("  ", null)).isInstanceOf(IllegalArgumentException.class);
+        verify(hospitalRepository, never()).findByAddressDistrictIgnoreCase(any());
+    }
+
+    @Test
     void findNearby_negativeRadius_throwsIllegalArgumentWithoutQueryingRepository() {
         assertThatThrownBy(() -> service.findNearby(80.2, 13.0, -5.0)).isInstanceOf(IllegalArgumentException.class);
 

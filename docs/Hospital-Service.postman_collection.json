@@ -88,6 +88,26 @@
 					}
 				},
 				{
+					"name": "Get Hospitals by District",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"description": "All hospitals whose address.district matches (case-insensitive), full records sorted by name. Optional ?active=true|false; omit for both.",
+						"url": {
+							"raw": "{{baseUrl}}/api/hospitals/district/{{district}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospitals",
+								"district",
+								"{{district}}"
+							]
+						}
+					}
+				},
+				{
 					"name": "Find Nearby Hospitals",
 					"request": {
 						"method": "GET",
