@@ -3,6 +3,7 @@ package com.uyir.hospital.service.impl;
 import com.uyir.hospital.dto.AnalyticsSnapshotRequest;
 import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
+import com.uyir.hospital.dto.DistrictAnalyticsReport;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary.AppointmentStats;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary.BedStats;
@@ -67,7 +68,46 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
     @Override
     public DistrictAnalyticsSummary getSummary(String district, LocalDate fromDate, LocalDate toDate) {
         DateRange range = DateRange.resolve(fromDate, toDate);
-        DistrictData data = load(hospitalRepository.findByAddressDistrictIgnoreCase(district), range);
+        return buildSummary(district, range, loadDistrict(district, range));
+    }
+
+    @Override
+    public List<HospitalAnalyticsResponse> getHospitalBreakdown(String district, LocalDate fromDate, LocalDate toDate) {
+        return buildBreakdown(loadDistrict(district, DateRange.resolve(fromDate, toDate)));
+    }
+
+    @Override
+    public HospitalAnalyticsResponse getHospitalAnalytics(
+            String district, String hospitalId, LocalDate fromDate, LocalDate toDate) {
+        DateRange range = DateRange.resolve(fromDate, toDate);
+        Hospital hospital = hospitalRepository.findById(hospitalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hospital not found with id '" + hospitalId + "'"));
+        if (!inDistrict(hospital, district)) {
+            throw new ForbiddenException("Hospital '" + hospitalId + "' is not in district '" + district + "'");
+        }
+        return toHospitalAnalytics(hospital, load(List.of(hospital), range));
+    }
+
+    @Override
+    public List<AnalyticsTrendPoint> getTrends(String district, LocalDate fromDate, LocalDate toDate) {
+        DateRange range = DateRange.resolve(fromDate, toDate);
+        return buildTrends(range, loadDistrict(district, range));
+    }
+
+    // Summary + per-hospital breakdown + trends off one set of queries instead of three loads.
+    // No caller-supplied dates: always the default range (last 30 days ending today).
+    @Override
+    public DistrictAnalyticsReport getDistrictReport(String district) {
+        DateRange range = DateRange.resolve(null, null);
+        DistrictData data = loadDistrict(district, range);
+        return DistrictAnalyticsReport.builder()
+                .summary(buildSummary(district, range, data))
+                .hospitals(buildBreakdown(data))
+                .trends(buildTrends(range, data))
+                .build();
+    }
+
+    private DistrictAnalyticsSummary buildSummary(String district, DateRange range, DistrictData data) {
         List<Hospital> activeHospitals = data.hospitals.stream().filter(Hospital::isActive).toList();
 
         long general = sumBeds(activeHospitals, BedCapacity::getGeneral);
@@ -108,33 +148,14 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
                 .build();
     }
 
-    @Override
-    public List<HospitalAnalyticsResponse> getHospitalBreakdown(String district, LocalDate fromDate, LocalDate toDate) {
-        DateRange range = DateRange.resolve(fromDate, toDate);
-        DistrictData data = load(hospitalRepository.findByAddressDistrictIgnoreCase(district), range);
+    private List<HospitalAnalyticsResponse> buildBreakdown(DistrictData data) {
         return data.hospitals.stream()
                 .sorted(Comparator.comparing(Hospital::getHospitalName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
                 .map(hospital -> toHospitalAnalytics(hospital, data))
                 .toList();
     }
 
-    @Override
-    public HospitalAnalyticsResponse getHospitalAnalytics(
-            String district, String hospitalId, LocalDate fromDate, LocalDate toDate) {
-        DateRange range = DateRange.resolve(fromDate, toDate);
-        Hospital hospital = hospitalRepository.findById(hospitalId)
-                .orElseThrow(() -> new ResourceNotFoundException("Hospital not found with id '" + hospitalId + "'"));
-        if (!inDistrict(hospital, district)) {
-            throw new ForbiddenException("Hospital '" + hospitalId + "' is not in district '" + district + "'");
-        }
-        return toHospitalAnalytics(hospital, load(List.of(hospital), range));
-    }
-
-    @Override
-    public List<AnalyticsTrendPoint> getTrends(String district, LocalDate fromDate, LocalDate toDate) {
-        DateRange range = DateRange.resolve(fromDate, toDate);
-        DistrictData data = load(hospitalRepository.findByAddressDistrictIgnoreCase(district), range);
-
+    private List<AnalyticsTrendPoint> buildTrends(DateRange range, DistrictData data) {
         Map<LocalDate, Long> emergencyByDay = data.emergencyBookings.stream()
                 .filter(b -> b.getRequestedAt() != null)
                 .collect(Collectors.groupingBy(b -> toLocalDate(b.getRequestedAt()), Collectors.counting()));
@@ -191,6 +212,10 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
             throw new ForbiddenException("Analytics snapshot '" + snapshotId + "' belongs to a different district");
         }
         return snapshot;
+    }
+
+    private DistrictData loadDistrict(String district, DateRange range) {
+        return load(hospitalRepository.findByAddressDistrictIgnoreCase(district), range);
     }
 
     private DistrictData load(List<Hospital> hospitals, DateRange range) {

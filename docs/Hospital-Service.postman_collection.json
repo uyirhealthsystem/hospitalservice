@@ -2,11 +2,11 @@
 	"info": {
 		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
 		"name": "Hospital Service",
-		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8080.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are all POST with a JSON body, called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN and a required \"district\" body field (the Admin service decides which district an admin manages). Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
+		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8078 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
-		{ "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+		{ "key": "baseUrl", "value": "http://localhost:8078", "type": "string" },
 		{ "key": "hospitalId", "value": "", "type": "string" },
 		{ "key": "doctorId", "value": "", "type": "string" },
 		{ "key": "patientId", "value": "patient-001", "type": "string" },
@@ -89,6 +89,18 @@
 				},
 				{
 					"name": "Get Hospitals by District",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('every hospital is in the district', () => pm.response.json().forEach(h => pm.expect(h.address.district.toLowerCase()).to.eql(pm.variables.get('district').toLowerCase())));"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [],
@@ -635,7 +647,7 @@
 		},
 		{
 			"name": "Hospital Metrics",
-			"description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id.",
+			"description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id. GET /api/hospital/metrics/{district}: district in the URL, no body or dates (always the last 30 days); returns the full district report (summary + per-hospital + daily trends).",
 			"item": [
 				{
 					"name": "Get Hospital Metrics",
@@ -741,12 +753,143 @@
 							]
 						}
 					}
+				},
+				{
+					"name": "Get All District Metrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('has summary, hospitals and trends', () => {",
+									"    pm.expect(body).to.have.keys('summary', 'hospitals', 'trends');",
+									"});",
+									"pm.test('summary is for the requested district', () => {",
+									"    pm.expect(body.summary.district.toLowerCase()).to.eql(pm.variables.get('district').toLowerCase());",
+									"});",
+									"pm.test('covers the default last 30 days', () => {",
+									"    pm.expect(body.trends).to.have.lengthOf(30);",
+									"    pm.expect(body.trends[29].date).to.eql(body.summary.toDate);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{adminId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							}
+						],
+						"description": "Summary + per-hospital breakdown + daily trends in one response. District in the path, nothing else. Bookings and trends always cover the last 30 days ending today (IST).",
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"metrics",
+								"{{district}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All District Metrics - Super Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{superAdminId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "SUPER_ADMIN"
+							}
+						],
+						"description": "Same as above as SUPER_ADMIN.",
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"metrics",
+								"{{district}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All District Metrics as Hospital Role (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 403', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "Negative check: only ADMIN / SUPER_ADMIN may call metrics endpoints.",
+						"url": {
+							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"hospital",
+								"metrics",
+								"{{district}}"
+							]
+						}
+					}
 				}
 			]
 		},
 		{
 			"name": "Hospital Analytics",
-			"description": "District-level analytics. Called by the Admin service on behalf of an admin - this service doesn't look admins up.\n\n- Every endpoint is POST with a JSON body; nothing goes in the URL.\n- Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id = the admin's id.\n- district is required in every body. The Admin service decides which district an admin may see; this service trusts it.\n- Hospitals belong to a district via address.district (case-insensitive).",
+			"description": "District-level analytics. Called by the Admin service on behalf of an admin - this service doesn't look admins up.\n\n- Every endpoint is POST with a JSON body. For everything in one GET, see \"Get All District Metrics\" in Hospital Metrics.\n- Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id = the admin's id.\n- district is required in every body. The Admin service decides which district an admin may see; this service trusts it.\n- Hospitals belong to a district via address.district (case-insensitive).",
 			"item": [
 				{
 					"name": "Get District Summary",
@@ -1325,6 +1468,43 @@
 								"hospital",
 								"analytics",
 								"summary"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Service Health",
+			"description": "Spring Boot actuator, moved under /hospital/actuator so every path contains \"hospital\". Used by the k8s probes and the ALB health check. No X-User headers needed.",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('service is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"description": "Overall health (includes the MongoDB check). Liveness/readiness are at /hospital/actuator/health/liveness and /readiness.",
+						"url": {
+							"raw": "{{baseUrl}}/hospital/actuator/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"hospital",
+								"actuator",
+								"health"
 							]
 						}
 					}

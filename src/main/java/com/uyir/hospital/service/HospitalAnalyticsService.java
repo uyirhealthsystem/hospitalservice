@@ -3,6 +3,7 @@ package com.uyir.hospital.service;
 import com.uyir.hospital.dto.AnalyticsSnapshotRequest;
 import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
+import com.uyir.hospital.dto.DistrictAnalyticsReport;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import java.time.LocalDate;
@@ -17,6 +18,8 @@ public interface HospitalAnalyticsService {
     HospitalAnalyticsResponse getHospitalAnalytics(String district, String hospitalId, LocalDate fromDate, LocalDate toDate);
 
     List<AnalyticsTrendPoint> getTrends(String district, LocalDate fromDate, LocalDate toDate);
+
+    DistrictAnalyticsReport getDistrictReport(String district);
 
     AnalyticsSnapshotResponse createSnapshot(String district, String adminId, AnalyticsSnapshotRequest request);
 

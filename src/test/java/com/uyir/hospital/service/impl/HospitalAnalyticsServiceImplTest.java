@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.uyir.hospital.dto.AnalyticsSnapshotRequest;
 import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
+import com.uyir.hospital.dto.DistrictAnalyticsReport;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.exception.ForbiddenException;
@@ -248,6 +249,32 @@ class HospitalAnalyticsServiceImplTest {
         assertThat(points.get(1).getEmergencyBookings()).isZero();
         assertThat(points.get(1).getAppointments()).isEqualTo(1);
         assertThat(points.get(2).getEmergencyBookings()).isEqualTo(1);
+    }
+
+    @Test
+    void getDistrictReport_combinesSummaryBreakdownAndTrendsFromOneLoad() {
+        stubDistrict();
+
+        DistrictAnalyticsReport report = service.getDistrictReport("Chennai");
+
+        assertThat(report.getSummary().getDistrict()).isEqualTo("Chennai");
+        assertThat(report.getSummary().getHospitals().getTotal()).isEqualTo(2);
+        assertThat(report.getSummary().getEmergencyBookings().getTotal()).isEqualTo(3);
+        assertThat(report.getHospitals()).extracting(HospitalAnalyticsResponse::getHospitalId).containsExactly("h1", "h2");
+        verify(hospitalRepository).findByAddressDistrictIgnoreCase("Chennai");
+        verify(emergencyBookingRepository).findByHospitalIdsRequestedBetween(anyCollection(), any(), any());
+    }
+
+    @Test
+    void getDistrictReport_alwaysUsesDefaultLast30Days() {
+        when(hospitalRepository.findByAddressDistrictIgnoreCase("Chennai")).thenReturn(List.of());
+        LocalDate today = LocalDate.now(HospitalAnalyticsServiceImpl.ZONE);
+
+        DistrictAnalyticsReport report = service.getDistrictReport("Chennai");
+
+        assertThat(report.getSummary().getFromDate()).isEqualTo(today.minusDays(29));
+        assertThat(report.getSummary().getToDate()).isEqualTo(today);
+        assertThat(report.getTrends()).hasSize(HospitalAnalyticsServiceImpl.DEFAULT_RANGE_DAYS);
     }
 
     @Test

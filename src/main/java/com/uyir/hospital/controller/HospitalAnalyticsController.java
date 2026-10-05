@@ -26,7 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 // ADMIN / SUPER_ADMIN only. The Admin service owns which district an admin manages and passes
 // it in the request body - this service doesn't look admins up, it just scopes to it.
 // Every endpoint is POST with a JSON body (same approach as DoctorController's /list and
-// /search) so no filter data travels in the URL.
+// /search) so no filter data travels in the URL. The all-in-one GET report lives in
+// HospitalMetricsController as GET /api/hospital/metrics/{district}.
 @RestController
 @RequestMapping("/api/hospital/analytics")
 @RequiredArgsConstructor

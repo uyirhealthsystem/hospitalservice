@@ -528,6 +528,8 @@ District-level analytics, called by the **Admin service** on behalf of an admin.
 
 ## Endpoints
 
+To get the summary, per-hospital rows and trends for a district in one `GET`, use [`GET /api/hospital/metrics/{district}`](#all-district-metrics-in-one-call--get-apihospitalmetricsdistrict).
+
 All `POST`, all under `/api/hospital/analytics`:
 
 | Path | Body | Description |
@@ -710,5 +712,24 @@ curl -X POST http://localhost:8080/api/hospital/metrics/district \n  -H "Content
   "appointments": { "total": 40, "byStatus": { "CONFIRMED": 15, "RESCHEDULED": 3, "CANCELLED": 4, "COMPLETED": 18 }, "upcoming": 17 }
 }
 ```
+
+## All district metrics in one call — `GET /api/hospital/metrics/{district}`
+
+The district goes in the URL and nothing else is passed — no body, no date params. Booking counts and trends always cover the **default range: the last 30 days ending today (IST)**; use the [Analytics](#hospital-analytics-api-reference) POST endpoints for a custom range. Returns the analytics summary, per-hospital rows and daily trends together, computed from a single data load. Same `ADMIN` / `SUPER_ADMIN` headers and district rule as above.
+
+```bash
+curl "http://localhost:8080/api/hospital/metrics/Chennai" \
+  -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN"
+```
+
+```json
+{
+  "summary":   { ...Analytics "Summary response"... },
+  "hospitals": [ ...Analytics "Per-hospital row"s... ],
+  "trends":    [ ...Analytics "Trends response"... ]
+}
+```
+
+`403` if the caller isn't `ADMIN` / `SUPER_ADMIN`. A district with no hospitals returns zeros/empty arrays, not `404`. URL-encode districts with spaces (`/metrics/Kanchipuram%20East`). Not to be confused with `POST /metrics/district` above, which returns the counts-only shape.
 
 > **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/hospital/actuator`, e.g. `/hospital/actuator/health`, so every path contains `hospital`.

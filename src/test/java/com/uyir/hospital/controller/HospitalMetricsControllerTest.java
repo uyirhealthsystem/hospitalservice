@@ -2,6 +2,7 @@ package com.uyir.hospital.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -9,13 +10,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.uyir.hospital.dto.AnalyticsTrendPoint;
+import com.uyir.hospital.dto.DistrictAnalyticsReport;
+import com.uyir.hospital.dto.DistrictAnalyticsSummary;
+import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.dto.HospitalMetricsResponse;
 import com.uyir.hospital.dto.HospitalMetricsResponse.HospitalMetrics;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
+import com.uyir.hospital.service.HospitalAnalyticsService;
 import com.uyir.hospital.service.HospitalMetricsService;
 import java.time.LocalDate;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +42,9 @@ class HospitalMetricsControllerTest {
 
     @MockitoBean
     private HospitalMetricsService metricsService;
+
+    @MockitoBean
+    private HospitalAnalyticsService analyticsService;
 
     @MockitoBean
     private CurrentUserContext currentUserContext;
@@ -141,5 +151,39 @@ class HospitalMetricsControllerTest {
         when(metricsService.getMetrics(isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
 
         mockMvc.perform(post(BASE)).andExpect(status().isOk()).andExpect(jsonPath("$.district").doesNotExist());
+    }
+
+    @Test
+    void districtReport_passesDistrictFromPath() throws Exception {
+        when(analyticsService.getDistrictReport("Chennai"))
+                .thenReturn(DistrictAnalyticsReport.builder()
+                        .summary(DistrictAnalyticsSummary.builder().district("Chennai").build())
+                        .hospitals(List.of(HospitalAnalyticsResponse.builder().hospitalId("h1").build()))
+                        .trends(List.of(AnalyticsTrendPoint.builder().date(LocalDate.of(2026, 9, 1)).build()))
+                        .build());
+
+        mockMvc.perform(get(BASE + "/Chennai"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.district").value("Chennai"))
+                .andExpect(jsonPath("$.hospitals[0].hospitalId").value("h1"))
+                .andExpect(jsonPath("$.trends[0].date").value("2026-09-01"));
+        verifyNoInteractions(metricsService);
+    }
+
+    @Test
+    void districtReport_trimsEncodedSpacesInDistrict() throws Exception {
+        when(analyticsService.getDistrictReport("Chennai")).thenReturn(DistrictAnalyticsReport.builder().build());
+
+        mockMvc.perform(get(BASE + "/{district}", " Chennai ")).andExpect(status().isOk());
+        verify(analyticsService).getDistrictReport("Chennai");
+    }
+
+    @Test
+    void districtReport_notAdmin_returns403() throws Exception {
+        when(currentUserContext.requireAnyRole(Role.ADMIN, Role.SUPER_ADMIN))
+                .thenThrow(new ForbiddenException("This action requires one of the roles [ADMIN, SUPER_ADMIN]"));
+
+        mockMvc.perform(get(BASE + "/Chennai")).andExpect(status().isForbidden());
+        verifyNoInteractions(analyticsService);
     }
 }
