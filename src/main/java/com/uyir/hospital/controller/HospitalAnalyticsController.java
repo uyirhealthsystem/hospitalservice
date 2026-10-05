@@ -27,9 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 // it in the request body - this service doesn't look admins up, it just scopes to it.
 // Every endpoint is POST with a JSON body (same approach as DoctorController's /list and
 // /search) so no filter data travels in the URL. The all-in-one GET report lives in
-// HospitalMetricsController as GET /api/hospital/metrics/{district}.
+// HospitalMetricsController as GET /api/v1/hospital/metrics/{district}.
 @RestController
-@RequestMapping("/api/hospital/analytics")
+@RequestMapping("/api/v1/hospital/analytics")
 @RequiredArgsConstructor
 @Tag(name = "Hospital Analytics")
 public class HospitalAnalyticsController {

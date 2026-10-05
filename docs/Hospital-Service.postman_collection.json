@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
 		"name": "Hospital Service",
-		"description": "REST API for the Uyir hospital service. Every path contains \"hospital\" per project convention. Base URL defaults to http://localhost:8078 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
+		"description": "REST API for the Uyir hospital service. Every path is under the /api/v1/hospital prefix. Base URL defaults to http://localhost:8078 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/v1/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -47,9 +47,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals",
+							"raw": "{{baseUrl}}/api/v1/hospital",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals" ]
+							"path": [ "api", "v1", "hospital" ]
 						}
 					}
 				},
@@ -59,9 +59,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}" ]
 						}
 					}
 				},
@@ -71,9 +71,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals?city=Chennai&hospitalType=SUPER_SPECIALITY&active=true&page=0&size=20&sort=hospitalName,asc",
+							"raw": "{{baseUrl}}/api/v1/hospital?city=Chennai&hospitalType=SUPER_SPECIALITY&active=true&page=0&size=20&sort=hospitalName,asc",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals" ],
+							"path": [ "api", "v1", "hospital" ],
 							"query": [
 								{ "key": "city", "value": "Chennai" },
 								{ "key": "state", "value": "", "disabled": true },
@@ -106,13 +106,14 @@
 						"header": [],
 						"description": "All hospitals whose address.district matches (case-insensitive), full records sorted by name. Optional ?active=true|false; omit for both.",
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/district/{{district}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/district/{{district}}",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"hospitals",
+								"v1",
+								"hospital",
 								"district",
 								"{{district}}"
 							]
@@ -125,9 +126,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/nearby?longitude=80.27&latitude=13.08&radiusKm=5",
+							"raw": "{{baseUrl}}/api/v1/hospital/nearby?longitude=80.27&latitude=13.08&radiusKm=5",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "nearby" ],
+							"path": [ "api", "v1", "hospital", "nearby" ],
 							"query": [
 								{ "key": "longitude", "value": "80.27" },
 								{ "key": "latitude", "value": "13.08" },
@@ -147,9 +148,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}" ]
 						}
 					}
 				},
@@ -159,9 +160,9 @@
 						"method": "PATCH",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}/activate",
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}/activate",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "{{hospitalId}}", "activate" ]
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}", "activate" ]
 						}
 					}
 				},
@@ -171,9 +172,9 @@
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "{{hospitalId}}" ]
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}" ]
 						}
 					}
 				},
@@ -188,9 +189,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospitals/{{hospitalId}}/emergency-services/toggle",
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}/emergency-services/toggle",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospitals", "{{hospitalId}}", "emergency-services", "toggle" ]
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}", "emergency-services", "toggle" ]
 						},
 						"description": "Turns the hospital's emergencyServices.handlesEmergencies flag on/off. Set \"handlesEmergencies\": false to immediately exclude this hospital from Emergency SOS results and reject new emergency bookings against it."
 					}
@@ -226,9 +227,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors" ]
+							"path": [ "api", "v1", "hospital", "doctors" ]
 						}
 					}
 				},
@@ -238,9 +239,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}" ]
 						}
 					}
 				},
@@ -250,9 +251,9 @@
 						"method": "POST",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/list",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/list",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "list" ]
+							"path": [ "api", "v1", "hospital", "doctors", "list" ]
 						}
 					}
 				},
@@ -267,9 +268,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/search?page=0&size=20&sort=name,asc",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/search?page=0&size=20&sort=name,asc",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "search" ],
+							"path": [ "api", "v1", "hospital", "doctors", "search" ],
 							"query": [
 								{ "key": "page", "value": "0" },
 								{ "key": "size", "value": "20" },
@@ -289,9 +290,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}" ]
 						}
 					}
 				},
@@ -301,9 +302,9 @@
 						"method": "PATCH",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/activate",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/activate",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "activate" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}", "activate" ]
 						}
 					}
 				},
@@ -313,9 +314,9 @@
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}" ]
 						}
 					}
 				},
@@ -330,9 +331,9 @@
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-in",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/check-in",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "check-in" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}", "check-in" ]
 						}
 					}
 				},
@@ -342,9 +343,9 @@
 						"method": "POST",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-out",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/check-out",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "doctors", "{{doctorId}}", "check-out" ]
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}", "check-out" ]
 						}
 					}
 				}
@@ -359,9 +360,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/emergency-sos?emergencyType=Cardiac Arrest&longitude=80.27&latitude=13.08&radiusKm=10",
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-sos?emergencyType=Cardiac Arrest&longitude=80.27&latitude=13.08&radiusKm=10",
 							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "hospital", "emergency-sos" ],
+							"path": [ "api", "v1", "hospital", "emergency-sos" ],
 							"query": [
 								{ "key": "emergencyType", "value": "Cardiac Arrest" },
 								{ "key": "longitude", "value": "80.27" },
@@ -419,12 +420,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/emergency-bookings",
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"emergency-bookings"
 							]
@@ -446,12 +448,13 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/emergency-bookings",
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"emergency-bookings"
 							]
@@ -473,12 +476,13 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/emergency-bookings/history",
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/history",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"emergency-bookings",
 								"history"
@@ -534,12 +538,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctor-appointments",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"doctor-appointments"
 							]
@@ -561,12 +566,13 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctor-appointments",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"doctor-appointments"
 							]
@@ -588,12 +594,13 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctor-appointments/history",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/history",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"doctor-appointments",
 								"history"
@@ -629,12 +636,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/doctor-appointments/{{appointmentBookingId}}/reschedule",
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/reschedule",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"doctor-appointments",
 								"{{appointmentBookingId}}",
@@ -647,7 +655,7 @@
 		},
 		{
 			"name": "Hospital Metrics",
-			"description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id. GET /api/hospital/metrics/{district}: district in the URL, no body or dates (always the last 30 days); returns the full district report (summary + per-hospital + daily trends).",
+			"description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id. GET /api/v1/hospital/metrics/{district}: district in the URL, no body or dates (always the last 30 days); returns the full district report (summary + per-hospital + daily trends).",
 			"item": [
 				{
 					"name": "Get Hospital Metrics",
@@ -689,12 +697,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/metrics",
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"metrics"
 							]
@@ -741,12 +750,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/metrics/district",
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/district",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"metrics",
 								"district"
@@ -792,12 +802,13 @@
 						],
 						"description": "Summary + per-hospital breakdown + daily trends in one response. District in the path, nothing else. Bookings and trends always cover the last 30 days ending today (IST).",
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/{{district}}",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"metrics",
 								"{{district}}"
@@ -832,12 +843,13 @@
 						],
 						"description": "Same as above as SUPER_ADMIN.",
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/{{district}}",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"metrics",
 								"{{district}}"
@@ -872,12 +884,13 @@
 						],
 						"description": "Negative check: only ADMIN / SUPER_ADMIN may call metrics endpoints.",
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/metrics/{{district}}",
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/{{district}}",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"metrics",
 								"{{district}}"
@@ -931,12 +944,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"summary"
@@ -984,12 +998,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"summary"
@@ -1037,12 +1052,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/hospitals",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"hospitals"
@@ -1079,12 +1095,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/hospitals/detail",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/hospitals/detail",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"hospitals",
@@ -1133,12 +1150,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/trends",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/trends",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"trends"
@@ -1191,12 +1209,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/snapshots",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"snapshots"
@@ -1244,12 +1263,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/list",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/snapshots/list",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"snapshots",
@@ -1298,12 +1318,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/detail",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/snapshots/detail",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"snapshots",
@@ -1352,12 +1373,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/snapshots/delete",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/snapshots/delete",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"snapshots",
@@ -1406,12 +1428,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"summary"
@@ -1459,12 +1482,13 @@
 							}
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/hospital/analytics/summary",
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/summary",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
+								"v1",
 								"hospital",
 								"analytics",
 								"summary"
@@ -1475,8 +1499,8 @@
 			]
 		},
 		{
-			"name": "Service Health",
-			"description": "Spring Boot actuator, moved under /hospital/actuator so every path contains \"hospital\". Used by the k8s probes and the ALB health check. No X-User headers needed.",
+			"name": "Service Health & Docs",
+			"description": "Spring Boot actuator, at /api/v1/hospital/actuator, plus the springdoc OpenAPI spec. Health is used by the k8s probes and the ALB health check. No X-User headers needed.",
 			"item": [
 				{
 					"name": "Health Check",
@@ -1495,16 +1519,51 @@
 					"request": {
 						"method": "GET",
 						"header": [],
-						"description": "Overall health (includes the MongoDB check). Liveness/readiness are at /hospital/actuator/health/liveness and /readiness.",
+						"description": "Overall health (includes the MongoDB check). Liveness/readiness are at /api/v1/hospital/actuator/health/liveness and /readiness.",
 						"url": {
-							"raw": "{{baseUrl}}/hospital/actuator/health",
+							"raw": "{{baseUrl}}/api/v1/hospital/actuator/health",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
+								"api",
+								"v1",
 								"hospital",
 								"actuator",
 								"health"
+							]
+						}
+					}
+				},
+				{
+					"name": "OpenAPI Spec",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('is an OpenAPI document', () => pm.expect(pm.response.json()).to.have.property('openapi'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"description": "springdoc-generated OpenAPI JSON. Swagger UI is at /api/v1/hospital/swagger-ui.html (open it in a browser).",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/v3/api-docs",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"v3",
+								"api-docs"
 							]
 						}
 					}

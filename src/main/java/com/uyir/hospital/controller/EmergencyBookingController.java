@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/api/hospital/emergency-bookings")
+@RequestMapping("/api/v1/hospital/emergency-bookings")
 @RequiredArgsConstructor
 @Tag(name = "Emergency Bookings")
 public class EmergencyBookingController {

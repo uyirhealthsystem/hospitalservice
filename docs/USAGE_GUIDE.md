@@ -19,7 +19,7 @@ production) the API gateway attaches after validating the caller's JWT:
 | `X-User-Role`    | `PATIENT`, `HOSPITAL`, `ADMIN`, or `SUPER_ADMIN` |
 
 When testing locally/directly against this service, you set these headers yourself.
-Endpoints that don't need to know "who", like `GET /api/hospital/emergency-sos`
+Endpoints that don't need to know "who", like `GET /api/v1/hospital/emergency-sos`
 (anyone can search for a nearby hospital), don't require them at all.
 
 ---
@@ -35,7 +35,7 @@ emergencies — an `emergencyServices` block describing what it can handle.
 **Request**
 
 ```
-POST {{baseUrl}}/api/hospitals
+POST {{baseUrl}}/api/v1/hospital
 Content-Type: application/json
 
 {
@@ -99,7 +99,7 @@ Save the returned `id` — every other scenario below refers to it as `HOSPITAL_
 a hospital can flip just that flag:
 
 ```
-PATCH {{baseUrl}}/api/hospitals/{{hospitalId}}/emergency-services/toggle
+PATCH {{baseUrl}}/api/v1/hospital/{{hospitalId}}/emergency-services/toggle
 Content-Type: application/json
 
 { "handlesEmergencies": false }
@@ -133,7 +133,7 @@ check in.**
 **Create the doctor**
 
 ```
-POST {{baseUrl}}/api/hospital/doctors
+POST {{baseUrl}}/api/v1/hospital/doctors
 Content-Type: application/json
 
 {
@@ -159,7 +159,7 @@ note this `PUT` replaces the *entire* `hospitalAssociations` array, so if the
 doctor already has other associations, include those too):
 
 ```
-PUT {{baseUrl}}/api/hospital/doctors/{{doctorId}}
+PUT {{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}
 Content-Type: application/json
 
 {
@@ -179,7 +179,7 @@ Content-Type: application/json
 Emergency SOS availability):
 
 ```
-POST {{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-in
+POST {{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/check-in
 Content-Type: application/json
 
 { "hospitalId": "{{hospitalId}}" }
@@ -191,7 +191,7 @@ Skipping the association step and calling check-in directly fails with
 A doctor can be checked in at only one hospital at a time. At end of shift:
 
 ```
-POST {{baseUrl}}/api/hospital/doctors/{{doctorId}}/check-out
+POST {{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/check-out
 ```
 
 **Why this two-step design exists:** a doctor might be formally associated with
@@ -208,7 +208,7 @@ now," not "who's on paper" — so SOS matching (Scenario 4) only ever looks at
 hospital near me" screen.
 
 ```
-GET {{baseUrl}}/api/hospitals/nearby?longitude=80.27&latitude=13.08&radiusKm=10
+GET {{baseUrl}}/api/v1/hospital/nearby?longitude=80.27&latitude=13.08&radiusKm=10
 ```
 
 Returns any active hospital within the radius, nearest first — no emergency
@@ -226,7 +226,7 @@ This is the most involved scenario because several conditions must line up
 before a hospital is shown as a valid option.
 
 ```
-GET {{baseUrl}}/api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
+GET {{baseUrl}}/api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
 ```
 
 **A hospital only appears in the result if ALL of these are true:**
@@ -267,7 +267,7 @@ up — there's no error, just an empty (or shorter) list.
 **Then the patient books at the chosen hospital:**
 
 ```
-POST {{baseUrl}}/api/hospital/emergency-bookings
+POST {{baseUrl}}/api/v1/hospital/emergency-bookings
 Content-Type: application/json
 X-User-Id: patient-001
 X-User-Role: PATIENT
@@ -288,7 +288,7 @@ rejected with `400 Bad Request`.
 **The hospital views its incoming emergency requests:**
 
 ```
-GET {{baseUrl}}/api/hospital/emergency-bookings
+GET {{baseUrl}}/api/v1/hospital/emergency-bookings
 X-User-Id: 68d5f1a2c9e1a2b3c4d5e601
 X-User-Role: HOSPITAL
 ```
@@ -306,7 +306,7 @@ doctor (contrast with Scenario 4, which is for emergencies and doesn't target
 a specific doctor).
 
 ```
-POST {{baseUrl}}/api/hospital/doctor-appointments
+POST {{baseUrl}}/api/v1/hospital/doctor-appointments
 Content-Type: application/json
 X-User-Id: patient-002
 X-User-Role: PATIENT
@@ -327,7 +327,7 @@ timestamps with `400 Bad Request`.
 **The hospital reschedules it** (only the hospital can; patients can't):
 
 ```
-PATCH {{baseUrl}}/api/hospital/doctor-appointments/{{bookingId}}/reschedule
+PATCH {{baseUrl}}/api/v1/hospital/doctor-appointments/{{bookingId}}/reschedule
 Content-Type: application/json
 X-User-Id: 68d5f1a2c9e1a2b3c4d5e601
 X-User-Role: HOSPITAL
@@ -344,17 +344,17 @@ design, an emergency isn't something you push to next week.
 
 | Endpoint | Caller role | Notes |
 |---|---|---|
-| `POST /api/hospitals` | (unrestricted today) | Admin/ops action |
-| `PATCH /api/hospitals/{id}/emergency-services/toggle` | (unrestricted today) | See warning below |
-| `POST /api/hospital/doctors/{id}/check-in` | (unrestricted today) | |
-| `GET /api/hospital/emergency-sos` | none required | Public search |
-| `POST /api/hospital/emergency-bookings` | `PATIENT` | Creates for the calling patient |
-| `GET /api/hospital/emergency-bookings` | `HOSPITAL` | Only the caller's own bookings |
-| `POST /api/hospital/doctor-appointments` | `PATIENT` | |
-| `PATCH /api/hospital/doctor-appointments/{id}/reschedule` | `HOSPITAL` | Only the caller's own hospital's bookings |
-| `GET /api/hospital/doctor-appointments` | `HOSPITAL` | Only the caller's own bookings |
-| `POST /api/hospital/analytics/**` | `ADMIN`, `SUPER_ADMIN` | All POST with a JSON body; `district` required in the body |
-| `POST /api/hospital/analytics/snapshots/**` | `ADMIN`, `SUPER_ADMIN` | Only snapshots belonging to the given `district` |
+| `POST /api/v1/hospital` | (unrestricted today) | Admin/ops action |
+| `PATCH /api/v1/hospital/{id}/emergency-services/toggle` | (unrestricted today) | See warning below |
+| `POST /api/v1/hospital/doctors/{id}/check-in` | (unrestricted today) | |
+| `GET /api/v1/hospital/emergency-sos` | none required | Public search |
+| `POST /api/v1/hospital/emergency-bookings` | `PATIENT` | Creates for the calling patient |
+| `GET /api/v1/hospital/emergency-bookings` | `HOSPITAL` | Only the caller's own bookings |
+| `POST /api/v1/hospital/doctor-appointments` | `PATIENT` | |
+| `PATCH /api/v1/hospital/doctor-appointments/{id}/reschedule` | `HOSPITAL` | Only the caller's own hospital's bookings |
+| `GET /api/v1/hospital/doctor-appointments` | `HOSPITAL` | Only the caller's own bookings |
+| `POST /api/v1/hospital/analytics/**` | `ADMIN`, `SUPER_ADMIN` | All POST with a JSON body; `district` required in the body |
+| `POST /api/v1/hospital/analytics/snapshots/**` | `ADMIN`, `SUPER_ADMIN` | Only snapshots belonging to the given `district` |
 
 ⚠️ **Heads up:** hospital and doctor management endpoints (`HospitalController`,
 `DoctorController`) currently have **no role restriction at all** — anyone can

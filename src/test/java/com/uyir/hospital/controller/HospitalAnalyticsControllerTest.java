@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 @AutoConfigureMockMvc(addFilters = false)
 class HospitalAnalyticsControllerTest {
 
-    private static final String BASE = "/api/hospital/analytics";
+    private static final String BASE = "/api/v1/hospital/analytics";
 
     @Autowired
     private MockMvc mockMvc;

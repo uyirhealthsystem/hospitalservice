@@ -12,7 +12,7 @@ All hospitals below are placed near Chennai (lon ~80.27, lat ~13.08) so the
 --------------------------------------------------------------------------------
 1. CREATE HOSPITAL #1 - "Apollo General" (handles Cardiac Arrest)
 --------------------------------------------------------------------------------
-POST /api/hospitals
+POST /api/v1/hospital
 Content-Type: application/json
 
 {
@@ -52,7 +52,7 @@ Note the returned "id" as HOSPITAL_1_ID.
 --------------------------------------------------------------------------------
 2. CREATE HOSPITAL #2 - "Metro Burns Care" (handles Burns only, no Cardiac)
 --------------------------------------------------------------------------------
-POST /api/hospitals
+POST /api/v1/hospital
 Content-Type: application/json
 
 {
@@ -90,7 +90,7 @@ Note the returned "id" as HOSPITAL_2_ID.
 --------------------------------------------------------------------------------
 3. CREATE DOCTOR #1 - Cardiologist (will check in at Hospital #1)
 --------------------------------------------------------------------------------
-POST /api/hospital/doctors
+POST /api/v1/hospital/doctors
 Content-Type: application/json
 
 {
@@ -116,7 +116,7 @@ Note the returned "id" as DOCTOR_1_ID.
 4. CREATE DOCTOR #2 - Dermatologist (unrelated specialty; used to prove the
    emergency-sos specialty filter excludes non-matching doctors)
 --------------------------------------------------------------------------------
-POST /api/hospital/doctors
+POST /api/v1/hospital/doctors
 Content-Type: application/json
 
 {
@@ -142,12 +142,12 @@ Note the returned "id" as DOCTOR_2_ID.
 5. CHECK IN both doctors at Hospital #1 (required for SOS to count them as
    "available" - currentHospitalId is set by this call)
 --------------------------------------------------------------------------------
-POST /api/hospital/doctors/{DOCTOR_1_ID}/check-in
+POST /api/v1/hospital/doctors/{DOCTOR_1_ID}/check-in
 Content-Type: application/json
 
 { "hospitalId": "HOSPITAL_1_ID" }
 
-POST /api/hospital/doctors/{DOCTOR_2_ID}/check-in
+POST /api/v1/hospital/doctors/{DOCTOR_2_ID}/check-in
 Content-Type: application/json
 
 { "hospitalId": "HOSPITAL_1_ID" }
@@ -157,20 +157,20 @@ Content-Type: application/json
    availableDoctorCount = 1 (Dr. Ananya Rao / Cardiology), NOT Dr. Karthik
    Iyer (Dermatology), because "Cardiac Arrest" only maps to Cardiology.
 --------------------------------------------------------------------------------
-GET /api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
+GET /api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
 
 Try also (expect empty - no hospital nearby handles it):
-GET /api/hospital/emergency-sos?emergencyType=Snake%20Bite&longitude=80.27&latitude=13.08&radiusKm=10
+GET /api/v1/hospital/emergency-sos?emergencyType=Snake%20Bite&longitude=80.27&latitude=13.08&radiusKm=10
 
 Try also (expect Hospital #2, Metro Burns Care - but 0 doctors checked in
 there yet, so it will be filtered out until a doctor checks in):
-GET /api/hospital/emergency-sos?emergencyType=Burns&longitude=80.27&latitude=13.08&radiusKm=10
+GET /api/v1/hospital/emergency-sos?emergencyType=Burns&longitude=80.27&latitude=13.08&radiusKm=10
 
 --------------------------------------------------------------------------------
 7. EMERGENCY BOOKING - patient books at Hospital #1 for Cardiac Arrest
    (requires X-User-Id / X-User-Role: PATIENT headers)
 --------------------------------------------------------------------------------
-POST /api/hospital/emergency-bookings
+POST /api/v1/hospital/emergency-bookings
 Content-Type: application/json
 X-User-Id: patient-001
 X-User-Role: PATIENT
@@ -186,7 +186,7 @@ Negative test - should now be REJECTED with 400 Bad Request (hospital
 capability mismatch, gap-2 fix): booking Hospital #2 (Burns-only) for a
 Cardiac Arrest:
 
-POST /api/hospital/emergency-bookings
+POST /api/v1/hospital/emergency-bookings
 Content-Type: application/json
 X-User-Id: patient-001
 X-User-Role: PATIENT
@@ -200,14 +200,14 @@ X-User-Role: PATIENT
 
 View a hospital's own emergency bookings (requires HOSPITAL role; hospitalId
 is taken from X-User-Id, so it must equal the hospital's own id):
-GET /api/hospital/emergency-bookings
+GET /api/v1/hospital/emergency-bookings
 X-User-Id: HOSPITAL_1_ID
 X-User-Role: HOSPITAL
 
 --------------------------------------------------------------------------------
 8. DOCTOR APPOINTMENT BOOKING - patient books a regular appointment
 --------------------------------------------------------------------------------
-POST /api/hospital/doctor-appointments
+POST /api/v1/hospital/doctor-appointments
 Content-Type: application/json
 X-User-Id: patient-002
 X-User-Role: PATIENT
@@ -225,7 +225,7 @@ Note: appointmentDateTime must be in the future relative to when you run
 this (it's validated with @Future) - adjust the date before sending.
 
 Reschedule (requires HOSPITAL role; X-User-Id must equal HOSPITAL_1_ID):
-PATCH /api/hospital/doctor-appointments/{BOOKING_ID}/reschedule
+PATCH /api/v1/hospital/doctor-appointments/{BOOKING_ID}/reschedule
 Content-Type: application/json
 X-User-Id: HOSPITAL_1_ID
 X-User-Role: HOSPITAL
@@ -233,7 +233,7 @@ X-User-Role: HOSPITAL
 { "appointmentDateTime": "2026-09-26T11:00:00Z" }
 
 List a hospital's own appointment bookings:
-GET /api/hospital/doctor-appointments
+GET /api/v1/hospital/doctor-appointments
 X-User-Id: HOSPITAL_1_ID
 X-User-Role: HOSPITAL
 
@@ -241,13 +241,13 @@ X-User-Role: HOSPITAL
 QUICK CURL EXAMPLES (replace HOSPITAL_1_ID / DOCTOR_1_ID after creating them)
 ================================================================================
 
-curl -X POST http://localhost:8080/api/hospitals \
+curl -X POST http://localhost:8080/api/v1/hospital \
   -H "Content-Type: application/json" \
   -d '{"hospitalName":"Apollo General Hospital","registrationNumber":"REG-TN-0001","ownershipType":"PRIVATE","hospitalType":"HOSPITAL","address":{"addressLine":"21 Greams Road","city":"Chennai","state":"Tamil Nadu","country":"India","pincode":"600006","location":{"type":"Point","coordinates":[80.2707,13.0827]}},"contactDetails":{"phone":"+914428290200"},"emergencyServices":{"handlesEmergencies":true,"specialtyEmergencyConditionsHandled":["Cardiac Arrest","Trauma","Stroke"]},"active":true}'
 
-curl "http://localhost:8080/api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
+curl "http://localhost:8080/api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
 
-curl -X POST http://localhost:8080/api/hospital/emergency-bookings \
+curl -X POST http://localhost:8080/api/v1/hospital/emergency-bookings \
   -H "Content-Type: application/json" \
   -H "X-User-Id: patient-001" \
   -H "X-User-Role: PATIENT" \

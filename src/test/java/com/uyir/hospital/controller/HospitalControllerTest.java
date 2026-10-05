@@ -77,7 +77,7 @@ class HospitalControllerTest {
     void create_validRequest_returns201WithLocation() throws Exception {
         when(hospitalService.create(any(HospitalRequest.class))).thenReturn(response("h1"));
 
-        mockMvc.perform(post("/api/hospitals")
+        mockMvc.perform(post("/api/v1/hospital")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
@@ -86,7 +86,7 @@ class HospitalControllerTest {
 
     @Test
     void create_blankRequest_returns400() throws Exception {
-        mockMvc.perform(post("/api/hospitals")
+        mockMvc.perform(post("/api/v1/hospital")
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -98,7 +98,7 @@ class HospitalControllerTest {
         when(hospitalService.create(any(HospitalRequest.class)))
                 .thenThrow(new DuplicateResourceException("Hospital with registration number 'REG-123' already exists"));
 
-        mockMvc.perform(post("/api/hospitals")
+        mockMvc.perform(post("/api/v1/hospital")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isConflict());
@@ -108,7 +108,7 @@ class HospitalControllerTest {
     void getById_found_returns200() throws Exception {
         when(hospitalService.getById("h1")).thenReturn(response("h1"));
 
-        mockMvc.perform(get("/api/hospitals/h1"))
+        mockMvc.perform(get("/api/v1/hospital/h1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("h1"));
     }
@@ -118,7 +118,7 @@ class HospitalControllerTest {
         when(hospitalService.getById("missing"))
                 .thenThrow(new ResourceNotFoundException("Hospital not found with id 'missing'"));
 
-        mockMvc.perform(get("/api/hospitals/missing"))
+        mockMvc.perform(get("/api/v1/hospital/missing"))
                 .andExpect(status().isNotFound());
     }
 
@@ -127,7 +127,7 @@ class HospitalControllerTest {
         when(hospitalService.search(any(), any(), any(), any(), any(), any()))
                 .thenReturn(PageResponse.from(new PageImpl<>(List.of(response("h1")), PageRequest.of(0, 20), 1)));
 
-        mockMvc.perform(get("/api/hospitals")
+        mockMvc.perform(get("/api/v1/hospital")
                         .param("city", "Chennai")
                         .param("state", "TN")
                         .param("hospitalType", "HOSPITAL")
@@ -142,13 +142,13 @@ class HospitalControllerTest {
 
     @Test
     void search_invalidEnumValue_returns400() throws Exception {
-        mockMvc.perform(get("/api/hospitals").param("hospitalType", "NOT_A_TYPE"))
+        mockMvc.perform(get("/api/v1/hospital").param("hospitalType", "NOT_A_TYPE"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void findNearby_missingRequiredParam_returns400() throws Exception {
-        mockMvc.perform(get("/api/hospitals/nearby").param("longitude", "80.2"))
+        mockMvc.perform(get("/api/v1/hospital/nearby").param("longitude", "80.2"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Required parameter 'latitude' is missing"));
     }
@@ -157,7 +157,7 @@ class HospitalControllerTest {
     void findByDistrict_returnsHospitalsInDistrict() throws Exception {
         when(hospitalService.findByDistrict("Chennai", null)).thenReturn(List.of(response("h1"), response("h2")));
 
-        mockMvc.perform(get("/api/hospitals/district/Chennai"))
+        mockMvc.perform(get("/api/v1/hospital/district/Chennai"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].id").value("h1"));
@@ -167,14 +167,14 @@ class HospitalControllerTest {
     void findByDistrict_passesActiveFilterAndDecodesSpaces() throws Exception {
         when(hospitalService.findByDistrict("The Nilgiris", true)).thenReturn(List.of(response("h1")));
 
-        mockMvc.perform(get("/api/hospitals/district/The Nilgiris").param("active", "true"))
+        mockMvc.perform(get("/api/v1/hospital/district/The Nilgiris").param("active", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("h1"));
     }
 
     @Test
     void findByDistrict_invalidActive_returns400() throws Exception {
-        mockMvc.perform(get("/api/hospitals/district/Chennai").param("active", "maybe"))
+        mockMvc.perform(get("/api/v1/hospital/district/Chennai").param("active", "maybe"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -183,7 +183,7 @@ class HospitalControllerTest {
         when(hospitalService.findNearby(anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(List.of(response("h1")));
 
-        mockMvc.perform(get("/api/hospitals/nearby")
+        mockMvc.perform(get("/api/v1/hospital/nearby")
                         .param("longitude", "80.2")
                         .param("latitude", "13.0")
                         .param("radiusKm", "5"))
@@ -197,7 +197,7 @@ class HospitalControllerTest {
     void findNearby_defaultRadius_isTenKm() throws Exception {
         when(hospitalService.findNearby(anyDouble(), anyDouble(), anyDouble())).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/hospitals/nearby")
+        mockMvc.perform(get("/api/v1/hospital/nearby")
                         .param("longitude", "80.2")
                         .param("latitude", "13.0"))
                 .andExpect(status().isOk());
@@ -210,7 +210,7 @@ class HospitalControllerTest {
         when(hospitalService.update(eq("missing"), any(HospitalRequest.class)))
                 .thenThrow(new ResourceNotFoundException("Hospital not found with id 'missing'"));
 
-        mockMvc.perform(put("/api/hospitals/missing")
+        mockMvc.perform(put("/api/v1/hospital/missing")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isNotFound());
@@ -220,13 +220,13 @@ class HospitalControllerTest {
     void activate_returns200() throws Exception {
         when(hospitalService.activate("h1")).thenReturn(response("h1"));
 
-        mockMvc.perform(patch("/api/hospitals/h1/activate"))
+        mockMvc.perform(patch("/api/v1/hospital/h1/activate"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void deactivate_returns204() throws Exception {
-        mockMvc.perform(delete("/api/hospitals/h1"))
+        mockMvc.perform(delete("/api/v1/hospital/h1"))
                 .andExpect(status().isNoContent());
 
         verify(hospitalService).deactivate("h1");
@@ -236,7 +236,7 @@ class HospitalControllerTest {
     void toggleEmergencyServices_validRequest_returns200() throws Exception {
         when(hospitalService.setHandlesEmergencies("h1", true)).thenReturn(response("h1"));
 
-        mockMvc.perform(patch("/api/hospitals/h1/emergency-services/toggle")
+        mockMvc.perform(patch("/api/v1/hospital/h1/emergency-services/toggle")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
                                 EmergencyServicesToggleRequest.builder().handlesEmergencies(true).build())))
@@ -248,7 +248,7 @@ class HospitalControllerTest {
 
     @Test
     void toggleEmergencyServices_missingField_returns400() throws Exception {
-        mockMvc.perform(patch("/api/hospitals/h1/emergency-services/toggle")
+        mockMvc.perform(patch("/api/v1/hospital/h1/emergency-services/toggle")
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest())

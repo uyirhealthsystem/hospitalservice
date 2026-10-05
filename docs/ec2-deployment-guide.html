@@ -476,10 +476,10 @@ mv target/*.jar target/app.jar
   <section class="phase">
     <div class="phase-head"><span class="phase-num">08</span><h2 class="phase-title">Prove it's alive</h2></div>
     <span class="file-tag">from your machine</span>
-    <pre><code>curl http://&lt;EC2_HOST&gt;:8080/hospital/actuator/health
+    <pre><code>curl http://&lt;EC2_HOST&gt;:8080/api/v1/hospital/actuator/health
 <span class="cmt">→ {"status":"UP"}</span>
 
-curl -X POST http://&lt;EC2_HOST&gt;:8080/api/hospital/doctors/search \
+curl -X POST http://&lt;EC2_HOST&gt;:8080/api/v1/hospital/doctors/search \
      -H "Content-Type: application/json" -d "{}"
 <span class="cmt">→ paginated list of doctors</span></code></pre>
     <span class="file-tag">on the EC2 instance, if you want the detail</span>

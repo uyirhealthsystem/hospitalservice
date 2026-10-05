@@ -63,7 +63,7 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
         when(emergencyBookingService.create(eq("p1"), any(EmergencyBookingRequest.class))).thenReturn(response("b1"));
 
-        mockMvc.perform(post("/api/hospital/emergency-bookings")
+        mockMvc.perform(post("/api/v1/hospital/emergency-bookings")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
@@ -76,7 +76,7 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT))
                 .thenThrow(new ForbiddenException("This action requires the 'PATIENT' role"));
 
-        mockMvc.perform(post("/api/hospital/emergency-bookings")
+        mockMvc.perform(post("/api/v1/hospital/emergency-bookings")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isForbidden());
@@ -86,7 +86,7 @@ class EmergencyBookingControllerTest {
     void create_blankRequest_returns400() throws Exception {
         when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
 
-        mockMvc.perform(post("/api/hospital/emergency-bookings")
+        mockMvc.perform(post("/api/v1/hospital/emergency-bookings")
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest());
@@ -97,7 +97,7 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("h1");
         when(emergencyBookingService.getByHospitalId("h1")).thenReturn(List.of(response("b1")));
 
-        mockMvc.perform(get("/api/hospital/emergency-bookings"))
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("b1"));
     }
@@ -107,7 +107,7 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.HOSPITAL))
                 .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
 
-        mockMvc.perform(get("/api/hospital/emergency-bookings")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings")).andExpect(status().isForbidden());
     }
 
     @Test
@@ -115,7 +115,7 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
         when(emergencyBookingService.getByPatientId("p1")).thenReturn(List.of(response("b1")));
 
-        mockMvc.perform(get("/api/hospital/emergency-bookings/history"))
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings/history"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("b1"));
     }
@@ -125,6 +125,6 @@ class EmergencyBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT))
                 .thenThrow(new ForbiddenException("This action requires the 'PATIENT' role"));
 
-        mockMvc.perform(get("/api/hospital/emergency-bookings/history")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings/history")).andExpect(status().isForbidden());
     }
 }

@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/hospital/emergency-sos")
+@RequestMapping("/api/v1/hospital/emergency-sos")
 @RequiredArgsConstructor
 @Tag(name = "Emergency SOS")
 public class EmergencySosController {

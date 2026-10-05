@@ -73,7 +73,7 @@ class DoctorAppointmentBookingControllerTest {
         when(doctorAppointmentBookingService.create(eq("p1"), any(DoctorAppointmentBookingRequest.class)))
                 .thenReturn(response("a1", AppointmentStatus.CONFIRMED));
 
-        mockMvc.perform(post("/api/hospital/doctor-appointments")
+        mockMvc.perform(post("/api/v1/hospital/doctor-appointments")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
@@ -86,7 +86,7 @@ class DoctorAppointmentBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT))
                 .thenThrow(new ForbiddenException("This action requires the 'PATIENT' role"));
 
-        mockMvc.perform(post("/api/hospital/doctor-appointments")
+        mockMvc.perform(post("/api/v1/hospital/doctor-appointments")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isForbidden());
@@ -98,7 +98,7 @@ class DoctorAppointmentBookingControllerTest {
         when(doctorAppointmentBookingService.getByHospitalId("h1"))
                 .thenReturn(List.of(response("a1", AppointmentStatus.CONFIRMED)));
 
-        mockMvc.perform(get("/api/hospital/doctor-appointments"))
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("a1"));
     }
@@ -109,7 +109,7 @@ class DoctorAppointmentBookingControllerTest {
         when(doctorAppointmentBookingService.getByPatientId("p1"))
                 .thenReturn(List.of(response("a1", AppointmentStatus.CONFIRMED)));
 
-        mockMvc.perform(get("/api/hospital/doctor-appointments/history"))
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/history"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("a1"));
     }
@@ -119,7 +119,7 @@ class DoctorAppointmentBookingControllerTest {
         when(currentUserContext.requireRole(Role.PATIENT))
                 .thenThrow(new ForbiddenException("This action requires the 'PATIENT' role"));
 
-        mockMvc.perform(get("/api/hospital/doctor-appointments/history")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/history")).andExpect(status().isForbidden());
     }
 
     @Test
@@ -129,7 +129,7 @@ class DoctorAppointmentBookingControllerTest {
                         eq("a1"), eq("h1"), any(RescheduleAppointmentRequest.class)))
                 .thenReturn(response("a1", AppointmentStatus.RESCHEDULED));
 
-        mockMvc.perform(patch("/api/hospital/doctor-appointments/a1/reschedule")
+        mockMvc.perform(patch("/api/v1/hospital/doctor-appointments/a1/reschedule")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
                                 RescheduleAppointmentRequest.builder().appointmentDateTime(future).build())))
@@ -142,7 +142,7 @@ class DoctorAppointmentBookingControllerTest {
         when(currentUserContext.requireRole(Role.HOSPITAL))
                 .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
 
-        mockMvc.perform(patch("/api/hospital/doctor-appointments/a1/reschedule")
+        mockMvc.perform(patch("/api/v1/hospital/doctor-appointments/a1/reschedule")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
                                 RescheduleAppointmentRequest.builder().appointmentDateTime(future).build())))

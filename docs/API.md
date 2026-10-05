@@ -1,6 +1,6 @@
 p# Hospital API Reference
 
-Base URL: `/api/hospitals` (every path contains `hospital` per project convention)
+Base URL: `/api/v1/hospital` (every path contains `hospital` per project convention)
 
 All request/response bodies are JSON. All endpoints are unauthenticated for now (see `docs/ARCHITECTURE.md` → Security).
 
@@ -8,18 +8,18 @@ All request/response bodies are JSON. All endpoints are unauthenticated for now 
 
 ## Create a hospital
 
-`POST /api/hospitals`
+`POST /api/v1/hospital`
 
 Request body: `HospitalRequest` (see [JSON shape](#hospitalrequest-shape) below). `registrationNumber` must be unique.
 
 | Status | Meaning |
 |---|---|
-| 201 Created | Returns the created `HospitalResponse`, `Location` header set to `/api/hospitals/{id}` |
+| 201 Created | Returns the created `HospitalResponse`, `Location` header set to `/api/v1/hospital/{id}` |
 | 400 Bad Request | Validation failed (missing required field, malformed email, etc.) |
 | 409 Conflict | `registrationNumber` already exists |
 
 ```bash
-curl -X POST http://localhost:8080/api/hospitals \
+curl -X POST http://localhost:8080/api/v1/hospital \
   -H "Content-Type: application/json" \
   -d '{
     "hospitalName": "Uyir Multi-Speciality Hospital",
@@ -41,11 +41,11 @@ curl -X POST http://localhost:8080/api/hospitals \
 
 ## Get a hospital by id
 
-`GET /api/hospitals/{id}` → 200 `HospitalResponse`, or 404 if not found.
+`GET /api/v1/hospital/{id}` → 200 `HospitalResponse`, or 404 if not found.
 
 ## List / search hospitals (paginated)
 
-`GET /api/hospitals`
+`GET /api/v1/hospital`
 
 | Query param | Type | Notes |
 |---|---|---|
@@ -72,33 +72,33 @@ Returns a `PageResponse<HospitalResponse>`:
 ```
 
 ```bash
-curl "http://localhost:8080/api/hospitals?city=Chennai&hospitalType=SUPER_SPECIALITY&active=true&page=0&size=20"
+curl "http://localhost:8080/api/v1/hospital?city=Chennai&hospitalType=SUPER_SPECIALITY&active=true&page=0&size=20"
 ```
 
 ## Find nearby hospitals (geospatial)
 
-`GET /api/hospitals/nearby?longitude={lng}&latitude={lat}&radiusKm={r}`
+`GET /api/v1/hospital/nearby?longitude={lng}&latitude={lat}&radiusKm={r}`
 
 Uses the `2dsphere` index on `address.location` (a GeoJSON `Point`, `[longitude, latitude]` order). Returns a plain array of `HospitalResponse`, ordered by proximity — **not paginated**, since MongoDB `$near` doesn't return a total count cheaply.
 
 ```bash
-curl "http://localhost:8080/api/hospitals/nearby?longitude=80.27&latitude=13.08&radiusKm=5"
+curl "http://localhost:8080/api/v1/hospital/nearby?longitude=80.27&latitude=13.08&radiusKm=5"
 ```
 
 ## Hospitals by district
 
-`GET /api/hospitals/district/{district}` — optional `?active=true|false` (omit for both)
+`GET /api/v1/hospital/district/{district}` — optional `?active=true|false` (omit for both)
 
 Every hospital whose `address.district` matches `{district}`, case-insensitively, as a plain array of full `HospitalResponse` records sorted by `hospitalName` — **not paginated**. An unknown district returns `[]`. URL-encode spaces (`/district/The%20Nilgiris`).
 
 ```bash
-curl "http://localhost:8080/api/hospitals/district/Chennai"
-curl "http://localhost:8080/api/hospitals/district/Chennai?active=true"
+curl "http://localhost:8080/api/v1/hospital/district/Chennai"
+curl "http://localhost:8080/api/v1/hospital/district/Chennai?active=true"
 ```
 
 ## Update a hospital
 
-`PUT /api/hospitals/{id}` — full replace of the mutable fields (same body shape as create, `surgicalNetwork` included). 404 if not found, 409 if the new `registrationNumber` collides with a different hospital, 400 on validation failure.
+`PUT /api/v1/hospital/{id}` — full replace of the mutable fields (same body shape as create, `surgicalNetwork` included). 404 if not found, 409 if the new `registrationNumber` collides with a different hospital, 400 on validation failure.
 
 Because this is a full replace, not a patch, clearing `surgicalNetwork` after a hospital opts out means sending the fields back explicitly as `false`/`null` (or `"surgicalNetwork": null` to drop the whole group) — just flipping `joinedSurgicalNetwork` to `false` while leaving the old equipment values in the request body does **not** clear them server-side.
 
@@ -132,8 +132,8 @@ Not enforced server-side: nothing requires the six fields to be present/non-null
 
 ## Activate / deactivate (soft delete)
 
-- `DELETE /api/hospitals/{id}` → sets `active=false`, returns 204. The document is **not** removed — hospitals are regulated entities and deletions must remain auditable.
-- `PATCH /api/hospitals/{id}/activate` → sets `active=true`, returns the updated `HospitalResponse`.
+- `DELETE /api/v1/hospital/{id}` → sets `active=false`, returns 204. The document is **not** removed — hospitals are regulated entities and deletions must remain auditable.
+- `PATCH /api/v1/hospital/{id}/activate` → sets `active=true`, returns the updated `HospitalResponse`.
 
 ## Error format
 
@@ -145,7 +145,7 @@ Every 4xx/5xx response body is an `ApiError`:
   "status": 400,
   "error": "Bad Request",
   "message": "Validation failed",
-  "path": "/api/hospitals",
+  "path": "/api/v1/hospital",
   "details": ["address.city: must not be blank"]
 }
 ```
@@ -309,24 +309,24 @@ Every 4xx/5xx response body is an `ApiError`:
 
 # Doctor API Reference
 
-Base URL: `/api/hospital/doctors` (contains `hospital` per the same project convention as above)
+Base URL: `/api/v1/hospital/doctors` (contains `hospital` per the same project convention as above)
 
 All request/response bodies are JSON. Unauthenticated for now, same as the Hospital API. Doctors are independent of hospitals in storage — a doctor's `hospitalAssociations` list is how it links to one or more hospitals, there's no ownership/parent-child relationship in Mongo.
 
 ## Create a doctor
 
-`POST /api/hospital/doctors`
+`POST /api/v1/hospital/doctors`
 
 Request body: `DoctorRequest` (see [full body reference](#full-body-reference-1) below). `tnmcNumber` must be unique.
 
 | Status | Meaning |
 |---|---|
-| 201 Created | Returns the created `DoctorResponse`, `Location` header set to `/api/hospital/doctors/{id}` |
+| 201 Created | Returns the created `DoctorResponse`, `Location` header set to `/api/v1/hospital/doctors/{id}` |
 | 400 Bad Request | Validation failed |
 | 409 Conflict | `tnmcNumber` already exists |
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/doctors \
+curl -X POST http://localhost:8080/api/v1/hospital/doctors \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Dr. Anitha Raman",
@@ -349,21 +349,21 @@ curl -X POST http://localhost:8080/api/hospital/doctors \
 
 ## Get a doctor by id
 
-`GET /api/hospital/doctors/{id}` → 200 `DoctorResponse`, or 404 if not found.
+`GET /api/v1/hospital/doctors/{id}` → 200 `DoctorResponse`, or 404 if not found.
 
 ## List all doctors
 
-`POST /api/hospital/doctors/list`
+`POST /api/v1/hospital/doctors/list`
 
 No request body. Returns the full, unpaginated `List<DoctorResponse>`.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/doctors/list
+curl -X POST http://localhost:8080/api/v1/hospital/doctors/list
 ```
 
 ## Search doctors (paginated)
 
-`POST /api/hospital/doctors/search`
+`POST /api/v1/hospital/doctors/search`
 
 Filters go in the JSON request body (`DoctorSearchRequest`); pagination stays in query params.
 
@@ -384,19 +384,19 @@ Filters go in the JSON request body (`DoctorSearchRequest`); pagination stays in
 All body fields are optional — an empty/omitted body returns every doctor, paginated. Returns a `PageResponse<DoctorResponse>` — same envelope shape as the hospital search endpoint.
 
 ```bash
-curl -X POST "http://localhost:8080/api/hospital/doctors/search?page=0&size=20" \
+curl -X POST "http://localhost:8080/api/v1/hospital/doctors/search?page=0&size=20" \
   -H "Content-Type: application/json" \
   -d '{ "specialty": "Cardiology", "active": true }'
 ```
 
 ## Update a doctor
 
-`PUT /api/hospital/doctors/{id}` — full replace of the mutable fields (same body shape as create). 404 if not found, 409 if the new `tnmcNumber` collides with a different doctor, 400 on validation failure.
+`PUT /api/v1/hospital/doctors/{id}` — full replace of the mutable fields (same body shape as create). 404 if not found, 409 if the new `tnmcNumber` collides with a different doctor, 400 on validation failure.
 
 ## Activate / deactivate (soft delete)
 
-- `DELETE /api/hospital/doctors/{id}` → sets `active=false`, returns 204. Not removed — TNMC registration is a regulated medical license, and deactivations must remain auditable, same reasoning as hospitals.
-- `PATCH /api/hospital/doctors/{id}/activate` → sets `active=true`, returns the updated `DoctorResponse`.
+- `DELETE /api/v1/hospital/doctors/{id}` → sets `active=false`, returns 204. Not removed — TNMC registration is a regulated medical license, and deactivations must remain auditable, same reasoning as hospitals.
+- `PATCH /api/v1/hospital/doctors/{id}/activate` → sets `active=true`, returns the updated `DoctorResponse`.
 
 Errors use the same `ApiError` shape as the Hospital API.
 
@@ -404,10 +404,10 @@ Errors use the same `ApiError` shape as the Hospital API.
 
 A doctor can be associated with several hospitals via `hospitalAssociations`, but can only be physically present at one at a time. `currentHospitalId` + `checkedInAt` on `Doctor` record that live fact directly, so anything that needs to know "which hospital is this doctor actually available at right now" (e.g. an emergency/SOS routing feature) can filter on `currentHospitalId` instead of naively treating every hospital in `hospitalAssociations` as available.
 
-`POST /api/hospital/doctors/{id}/check-in`
+`POST /api/v1/hospital/doctors/{id}/check-in`
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/doctors/<id>/check-in \
+curl -X POST http://localhost:8080/api/v1/hospital/doctors/<id>/check-in \
   -H "Content-Type: application/json" \
   -d '{ "hospitalId": "66f1a2b3c4d5e6f7a8b9c0d1" }'
 ```
@@ -420,10 +420,10 @@ Sets `currentHospitalId` and stamps `checkedInAt`. Checking in elsewhere implici
 | 400 Bad Request | Doctor is inactive, or `hospitalId` isn't one of the doctor's own `hospitalAssociations` |
 | 404 Not Found | Doctor id or hospital id doesn't exist |
 
-`POST /api/hospital/doctors/{id}/check-out`
+`POST /api/v1/hospital/doctors/{id}/check-out`
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/doctors/<id>/check-out
+curl -X POST http://localhost:8080/api/v1/hospital/doctors/<id>/check-out
 ```
 
 Clears `currentHospitalId` and `checkedInAt` to `null`. Idempotent — checking out a doctor who isn't checked in anywhere just returns their current (already-null) state, no error.
@@ -459,13 +459,13 @@ Not enforced server-side: nothing checks that `hospitalId` values in `hospitalAs
 
 # Emergency SOS API Reference
 
-Base URL: `/api/hospital/emergency-sos` (contains `hospital` per the same project convention as above)
+Base URL: `/api/v1/hospital/emergency-sos` (contains `hospital` per the same project convention as above)
 
 Cross-cutting feature: joins `Hospital` (geospatial + emergency-handling data) and `Doctor` (live check-in state) to answer "which nearby hospitals can actually treat this emergency right now." Read-only — there's no create/update here, just this one query.
 
 ## Find hospitals for an emergency
 
-`GET /api/hospital/emergency-sos`
+`GET /api/v1/hospital/emergency-sos`
 
 | Query param | Type | Required | Notes |
 |---|---|---|---|
@@ -475,7 +475,7 @@ Cross-cutting feature: joins `Hospital` (geospatial + emergency-handling data) a
 | `radiusKm` | double | no | default `10` |
 
 ```bash
-curl "http://localhost:8080/api/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
+curl "http://localhost:8080/api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
 ```
 
 **How a hospital qualifies** — all three, in order:
@@ -508,7 +508,7 @@ Returns a plain array of `EmergencyHospitalSuggestion`, not paginated (same reas
 
 # Hospital Analytics API Reference
 
-Base URL: `/api/hospital/analytics` (contains `hospital` per the project convention)
+Base URL: `/api/v1/hospital/analytics` (contains `hospital` per the project convention)
 
 District-level analytics, called by the **Admin service** on behalf of an admin. This service does not look admins up or know which district an admin manages — the Admin service owns that and passes it in.
 
@@ -528,9 +528,9 @@ District-level analytics, called by the **Admin service** on behalf of an admin.
 
 ## Endpoints
 
-To get the summary, per-hospital rows and trends for a district in one `GET`, use [`GET /api/hospital/metrics/{district}`](#all-district-metrics-in-one-call--get-apihospitalmetricsdistrict).
+To get the summary, per-hospital rows and trends for a district in one `GET`, use [`GET /api/v1/hospital/metrics/{district}`](#all-district-metrics-in-one-call--get-apihospitalmetricsdistrict).
 
-All `POST`, all under `/api/hospital/analytics`:
+All `POST`, all under `/api/v1/hospital/analytics`:
 
 | Path | Body | Description |
 |---|---|---|
@@ -544,7 +544,7 @@ All `POST`, all under `/api/hospital/analytics`:
 | `/snapshots/delete` | `{ district, snapshotId }` | Delete a snapshot → `204`; `403` if it belongs to another district. `POST`, not `DELETE`, because many proxies/clients drop `DELETE` bodies |
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/analytics/summary \
+curl -X POST http://localhost:8080/api/v1/hospital/analytics/summary \
   -H "Content-Type: application/json" \
   -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN" \
   -d '{ "district": "Chennai", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
@@ -618,7 +618,7 @@ curl -X POST http://localhost:8080/api/hospital/analytics/summary \
 Live analytics are recomputed from current data on every request — bed capacity, hospital status and doctor associations as they stood on a past date can't be reconstructed later. A snapshot freezes the summary at the moment it's saved so admins can keep monthly/quarterly records.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/analytics/snapshots \
+curl -X POST http://localhost:8080/api/v1/hospital/analytics/snapshots \
   -H "Content-Type: application/json" \
   -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN" \
   -d '{ "district": "Chennai", "label": "September 2026 review", "fromDate": "2026-09-01", "toDate": "2026-09-30" }'
@@ -639,7 +639,7 @@ Response: `{ id, district, label, fromDate, toDate, summary, createdBy, createdA
 
 # Hospital Metrics API Reference
 
-Base URL: `/api/hospital/metrics` (contains `hospital` per the project convention)
+Base URL: `/api/v1/hospital/metrics` (contains `hospital` per the project convention)
 
 Business metrics in one JSON object — either across **all districts** or for **one district**. For per-hospital breakdowns and daily trends use the [Analytics API](#hospital-analytics-api-reference).
 
@@ -653,7 +653,7 @@ Business metrics in one JSON object — either across **all districts** or for *
 Doctors and bookings are counted with MongoDB count queries — those documents are never loaded, so it stays cheap as data grows.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/metrics \
+curl -X POST http://localhost:8080/api/v1/hospital/metrics \
   -H "Content-Type: application/json" \
   -H "X-User-Id: admin-1" -H "X-User-Role: SUPER_ADMIN" \
   -d '{"fromDate":"2026-09-01","toDate":"2026-09-30"}'
@@ -690,14 +690,14 @@ curl -X POST http://localhost:8080/api/hospital/metrics \
 
 ## District metrics
 
-`POST /api/hospital/metrics/district` with `{ district, fromDate?, toDate? }` — `district` is **required** (missing or blank → `400`; no body → `400`). Same headers, date rules and response shape as above, plus a `district` field (the service-wide response leaves `district` out).
+`POST /api/v1/hospital/metrics/district` with `{ district, fromDate?, toDate? }` — `district` is **required** (missing or blank → `400`; no body → `400`). Same headers, date rules and response shape as above, plus a `district` field (the service-wide response leaves `district` out).
 
 Same district rule as Analytics: hospitals whose `address.district` matches, case-insensitively. Doctors are counted if associated with any of those hospitals (`checkedInNow` = checked into one of them); bookings and appointments are counted by `hospitalId`. An unknown district returns all zeros, not `404`.
 
 > As with Analytics, **district authorisation is the caller's job** — the Admin service must only pass a district the admin is allowed to manage.
 
 ```bash
-curl -X POST http://localhost:8080/api/hospital/metrics/district \n  -H "Content-Type: application/json" \n  -H "X-User-Id: admin-1" -H "X-User-Role: ADMIN" \n  -d '{"district":"Chennai","fromDate":"2026-09-01","toDate":"2026-09-30"}'
+curl -X POST http://localhost:8080/api/v1/hospital/metrics/district \n  -H "Content-Type: application/json" \n  -H "X-User-Id: admin-1" -H "X-User-Role: ADMIN" \n  -d '{"district":"Chennai","fromDate":"2026-09-01","toDate":"2026-09-30"}'
 ```
 
 ```json
@@ -713,12 +713,12 @@ curl -X POST http://localhost:8080/api/hospital/metrics/district \n  -H "Content
 }
 ```
 
-## All district metrics in one call — `GET /api/hospital/metrics/{district}`
+## All district metrics in one call — `GET /api/v1/hospital/metrics/{district}`
 
 The district goes in the URL and nothing else is passed — no body, no date params. Booking counts and trends always cover the **default range: the last 30 days ending today (IST)**; use the [Analytics](#hospital-analytics-api-reference) POST endpoints for a custom range. Returns the analytics summary, per-hospital rows and daily trends together, computed from a single data load. Same `ADMIN` / `SUPER_ADMIN` headers and district rule as above.
 
 ```bash
-curl "http://localhost:8080/api/hospital/metrics/Chennai" \
+curl "http://localhost:8080/api/v1/hospital/metrics/Chennai" \
   -H "X-User-Id: admin-001" -H "X-User-Role: ADMIN"
 ```
 
@@ -732,4 +732,4 @@ curl "http://localhost:8080/api/hospital/metrics/Chennai" \
 
 `403` if the caller isn't `ADMIN` / `SUPER_ADMIN`. A district with no hospitals returns zeros/empty arrays, not `404`. URL-encode districts with spaces (`/metrics/Kanchipuram%20East`). Not to be confused with `POST /metrics/district` above, which returns the counts-only shape.
 
-> **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/hospital/actuator`, e.g. `/hospital/actuator/health`, so every path contains `hospital`.
+> **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/api/v1/hospital/actuator`, e.g. `/api/v1/hospital/actuator/health`, so every path contains `hospital`.

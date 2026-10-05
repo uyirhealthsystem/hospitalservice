@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/api/hospital/doctor-appointments")
+@RequestMapping("/api/v1/hospital/doctor-appointments")
 @RequiredArgsConstructor
 @Tag(name = "Doctor Appointment Bookings")
 public class DoctorAppointmentBookingController {

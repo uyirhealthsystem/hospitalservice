@@ -16,19 +16,12 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/group.name: uyir-microservices
-    alb.ingress.kubernetes.io/healthcheck-path: /hospital/actuator/health
+    alb.ingress.kubernetes.io/healthcheck-path: /api/v1/hospital/actuator/health
 spec:
   rules:
     - http:
         paths:
-          - path: /api/hospitals
-            pathType: Prefix
-            backend:
-              service:
-                name: hospital-service
-                port:
-                  number: 80
-          - path: /api/hospital
+          - path: /api/v1/hospital
             pathType: Prefix
             backend:
               service:

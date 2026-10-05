@@ -4,7 +4,7 @@ Walkthrough for someone new to this codebase — how a request flows end to end,
 
 ## Follow one request through the stack
 
-`POST /api/hospitals` with a JSON body:
+`POST /api/v1/hospital` with a JSON body:
 
 1. **`HospitalController.create`** (`controller/HospitalController.java`) — Spring binds the JSON body into a `HospitalRequest`. `@Valid` triggers Jakarta Bean Validation (`@NotBlank`, `@NotNull`, `@Valid` cascading into nested `Address`/`ContactDetails`). If validation fails, Spring throws `MethodArgumentNotValidException` *before* the controller method body even runs.
 2. Controller calls `hospitalService.create(request)` — no business logic lives in the controller itself.
@@ -27,7 +27,7 @@ Spring Data lets you write `findByAddressCityAndActive(...)` and it "just works"
 
 - **GeoJSON coordinate order is `[longitude, latitude]`**, not `[lat, lng]`. This trips up nearly everyone once. `Address.java` has a comment calling it out; `HospitalServiceImpl.findNearby` builds `new Point(longitude, latitude)` in that order deliberately.
 - **`$near` requires a `2dsphere` index** when querying a GeoJSON `Point` (as opposed to legacy `[lng, lat]` array coordinates, which use a `2d` index). `MongoIndexConfig` ensures this index exists at startup via `@PostConstruct` — if you see a "unable to find index for $geoNear query" error, it means that component didn't run (e.g., MongoDB wasn't reachable at boot).
-- **Soft delete, not hard delete.** `DELETE /api/hospitals/{id}` flips `active` to `false`; the document stays in the collection. If you're writing a query and results seem to include "deleted" hospitals, that's expected — filter on `active=true` explicitly.
+- **Soft delete, not hard delete.** `DELETE /api/v1/hospital/{id}` flips `active` to `false`; the document stays in the collection. If you're writing a query and results seem to include "deleted" hospitals, that's expected — filter on `active=true` explicitly.
 - **The service checks uniqueness twice for different reasons.** The `existsByRegistrationNumber` pre-check gives a clean 409 in the common case; the `@Indexed(unique = true)` + `DuplicateKeyException` handling in `GlobalExceptionHandler` is what actually prevents duplicates under concurrent requests (the pre-check has a race window between the check and the insert).
 - **No auth yet.** `SecurityConfig` permits everything. Don't mistake that for "this is meant to be public in production" — see `docs/ARCHITECTURE.md` → Security.
 

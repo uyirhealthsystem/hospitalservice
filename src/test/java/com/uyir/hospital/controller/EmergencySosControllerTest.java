@@ -37,7 +37,7 @@ class EmergencySosControllerTest {
                         .availableDoctorCount(2)
                         .build()));
 
-        mockMvc.perform(get("/api/hospital/emergency-sos")
+        mockMvc.perform(get("/api/v1/hospital/emergency-sos")
                         .param("emergencyType", "Cardiac Arrest")
                         .param("longitude", "80.2")
                         .param("latitude", "13.0")
@@ -54,7 +54,7 @@ class EmergencySosControllerTest {
         when(emergencySosService.findAvailableHospitals(anyString(), anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(List.of());
 
-        mockMvc.perform(get("/api/hospital/emergency-sos")
+        mockMvc.perform(get("/api/v1/hospital/emergency-sos")
                         .param("emergencyType", "Cardiac Arrest")
                         .param("longitude", "80.2")
                         .param("latitude", "13.0"))
@@ -65,7 +65,7 @@ class EmergencySosControllerTest {
 
     @Test
     void find_missingEmergencyType_returns400() throws Exception {
-        mockMvc.perform(get("/api/hospital/emergency-sos")
+        mockMvc.perform(get("/api/v1/hospital/emergency-sos")
                         .param("longitude", "80.2")
                         .param("latitude", "13.0"))
                 .andExpect(status().isBadRequest())

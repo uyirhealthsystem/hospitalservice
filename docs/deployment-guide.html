@@ -910,10 +910,10 @@ kubectl get ingress hospital-service -n uyir</code></pre>
         <div class="body">
           <div class="term">
             <div class="label">terminal — replace &lt;ALB_DNS_NAME&gt;</div>
-            <pre><code>curl "http://&lt;ALB_DNS_NAME&gt;/api/hospitals"</code></pre>
+            <pre><code>curl "http://&lt;ALB_DNS_NAME&gt;/api/v1/hospital"</code></pre>
           </div>
           <p>
-            Swagger UI is live too, at <code class="inline">http://&lt;ALB_DNS_NAME&gt;/swagger-ui.html</code>
+            Swagger UI is live too, at <code class="inline">http://&lt;ALB_DNS_NAME&gt;/api/v1/hospital/swagger-ui.html</code>
             — useful for poking at every endpoint by hand without writing curl commands. If
             you use the Postman collection from earlier, update its <code class="inline">baseUrl</code>
             variable to this same ALB DNS name.
@@ -982,7 +982,7 @@ kubectl get nodes -L topology.kubernetes.io/zone</code></pre>
             <div class="trouble-row">
               <div class="symptom">ALB responds, but with 502/503</div>
               <div class="cause">Pods aren't passing their health check yet, or the health-check path is wrong.</div>
-              Confirm <code class="inline">alb.ingress.kubernetes.io/healthcheck-path</code> in <code class="inline">k8s/06-ingress.yaml</code> matches <code class="inline">/hospital/actuator/health</code>.
+              Confirm <code class="inline">alb.ingress.kubernetes.io/healthcheck-path</code> in <code class="inline">k8s/06-ingress.yaml</code> matches <code class="inline">/api/v1/hospital/actuator/health</code>.
             </div>
           </div>
         </div>

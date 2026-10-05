@@ -19,11 +19,11 @@ controller  →  service (interface + impl)  →  repository  →  MongoDB
 
 ## Key design decisions
 
-**Soft delete over hard delete.** `DELETE /api/hospitals/{id}` sets `active=false` rather than removing the document. Hospitals are regulated entities (registration numbers, UDHS staff records) — losing that history isn't acceptable, and downstream reports/audits need to see deactivated hospitals, not just current ones.
+**Soft delete over hard delete.** `DELETE /api/v1/hospital/{id}` sets `active=false` rather than removing the document. Hospitals are regulated entities (registration numbers, UDHS staff records) — losing that history isn't acceptable, and downstream reports/audits need to see deactivated hospitals, not just current ones.
 
 **Uniqueness is enforced twice.** The service pre-checks `existsByRegistrationNumber` for a fast, friendly 409 in the common case, but the real guarantee is the `@Indexed(unique = true)` on `Hospital.registrationNumber` (`Hospital.java:32`) plus `GlobalExceptionHandler` catching `DuplicateKeyException`. The pre-check alone has a check-then-insert race under concurrent writes; the unique index is the actual source of truth.
 
-**Custom search over derived query explosion.** `GET /api/hospitals` accepts five independent optional filters. A derived-query method per combination (`findByAddressCityAndHospitalTypeAndActive...`) doesn't scale past two or three filters. `HospitalRepositoryCustomImpl` builds a `Criteria` list from whatever filters are present and runs one `count` + one `find`, both windowed identically so pagination metadata stays correct.
+**Custom search over derived query explosion.** `GET /api/v1/hospital` accepts five independent optional filters. A derived-query method per combination (`findByAddressCityAndHospitalTypeAndActive...`) doesn't scale past two or three filters. `HospitalRepositoryCustomImpl` builds a `Criteria` list from whatever filters are present and runs one `count` + one `find`, both windowed identically so pagination metadata stays correct.
 
 **Geospatial as a first-class query.** `Address.location` is a `GeoJsonPoint` (`Address.java:23`) specifically so `$near` queries work. `MongoIndexConfig` ensures a `2dsphere` index on `address.location` at startup — MongoDB requires this index for `$near` against GeoJSON points. The `/nearby` endpoint returns a plain list rather than a `Page`, since `$near` result ordering (by distance) doesn't come with a cheap total count.
 

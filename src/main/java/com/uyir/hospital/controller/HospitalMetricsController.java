@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 // endpoints the counts are POST with the data in the body; the service-wide one accepts an empty body.
 // The exception is GET /{district}, the all-in-one district report, which takes the district in the URL.
 @RestController
-@RequestMapping("/api/hospital/metrics")
+@RequestMapping("/api/v1/hospital/metrics")
 @RequiredArgsConstructor
 @Tag(name = "Hospital Metrics")
 public class HospitalMetricsController {

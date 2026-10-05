@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/api/hospitals")
+@RequestMapping("/api/v1/hospital")
 @RequiredArgsConstructor
 @Tag(name = "Hospitals")
 public class HospitalController {
@@ -88,7 +88,7 @@ public class HospitalController {
     }
 
     // Lets a hospital enable/disable its own emergency-sos visibility. Turning this off
-    // immediately excludes the hospital from GET /api/hospital/emergency-sos results.
+    // immediately excludes the hospital from GET /api/v1/hospital/emergency-sos results.
     @PatchMapping("/{id}/emergency-services/toggle")
     public HospitalResponse toggleEmergencyServices(
             @PathVariable String id, @Valid @RequestBody EmergencyServicesToggleRequest request) {
