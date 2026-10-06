@@ -21,6 +21,7 @@ public class DoctorAppointmentBookingMapper {
                 .doctorId(booking.getDoctorId())
                 .appointmentDateTime(booking.getAppointmentDateTime())
                 .durationMinutes(booking.getDurationMinutes())
+                .tokenNumber(booking.getTokenNumber())
                 .consultationType(booking.getConsultationType())
                 .visitType(booking.getVisitType())
                 .previousAppointmentId(booking.getPreviousAppointmentId())

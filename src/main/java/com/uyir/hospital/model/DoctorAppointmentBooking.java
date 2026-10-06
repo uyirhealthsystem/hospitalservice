@@ -44,6 +44,8 @@ public class DoctorAppointmentBooking {
 
     private Instant appointmentDateTime;
     private Integer durationMinutes;
+    // Per doctor per local day, in booking order; reissued if a reschedule moves it to another day.
+    private Integer tokenNumber;
     private ConsultationType consultationType;
     private VisitType visitType;
     private String previousAppointmentId;

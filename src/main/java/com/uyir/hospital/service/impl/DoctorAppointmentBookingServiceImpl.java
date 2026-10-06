@@ -48,6 +48,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final HospitalRepository hospitalRepository;
     private final DoctorRepository doctorRepository;
     private final DoctorAppointmentBookingMapper doctorAppointmentBookingMapper;
+    private final AppointmentTokenGenerator appointmentTokenGenerator;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
@@ -95,6 +96,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .doctorId(request.getDoctorId())
                 .appointmentDateTime(request.getAppointmentDateTime())
                 .durationMinutes(durationMinutes)
+                .tokenNumber(appointmentTokenGenerator.nextToken(request.getDoctorId(), request.getAppointmentDateTime()))
                 .consultationType(request.getConsultationType() != null
                         ? request.getConsultationType()
                         : ConsultationType.IN_PERSON)
@@ -133,6 +135,13 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         }
 
         ensureSlotFree(booking.getDoctorId(), request.getAppointmentDateTime(), booking.effectiveDurationMinutes(), id);
+
+        // A token belongs to one day's queue; moving to another day joins the end of that day's queue.
+        if (booking.getAppointmentDateTime() == null
+                || !AppointmentTokenGenerator.sameDay(booking.getAppointmentDateTime(), request.getAppointmentDateTime())) {
+            booking.setTokenNumber(
+                    appointmentTokenGenerator.nextToken(booking.getDoctorId(), request.getAppointmentDateTime()));
+        }
 
         booking.setAppointmentDateTime(request.getAppointmentDateTime());
         booking.setStatus(AppointmentStatus.RESCHEDULED);

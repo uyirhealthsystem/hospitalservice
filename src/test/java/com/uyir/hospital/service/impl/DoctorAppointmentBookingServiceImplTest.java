@@ -33,6 +33,7 @@ import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.security.Role;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -54,6 +55,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private DoctorRepository doctorRepository;
 
+    @Mock
+    private AppointmentTokenGenerator appointmentTokenGenerator;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -63,7 +67,7 @@ class DoctorAppointmentBookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
-                doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper);
+                doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator);
     }
 
     private DoctorAppointmentBookingRequest validRequest() {
@@ -115,6 +119,83 @@ class DoctorAppointmentBookingServiceImplTest {
         assertThat(response.getDurationMinutes()).isEqualTo(DoctorAppointmentBooking.DEFAULT_DURATION_MINUTES);
         assertThat(response.getPatientAge()).isEqualTo(34);
         assertThat(response.getPatientGender()).isEqualTo(Sex.MALE);
+    }
+
+    @Test
+    void create_assignsTokenFromGenerator() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(appointmentTokenGenerator.nextToken("d1", future)).thenReturn(7);
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.create("p1", validRequest()).getTokenNumber()).isEqualTo(7);
+    }
+
+    @Test
+    void create_slotClash_doesNotConsumeToken() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(doctorAppointmentBookingRepository.findByDoctorIdStatusInStartingBetween(
+                        eq("d1"), anyCollection(), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(DoctorAppointmentBooking.builder()
+                        .id("a0")
+                        .appointmentDateTime(future)
+                        .status(AppointmentStatus.CONFIRMED)
+                        .build()));
+
+        assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(DuplicateResourceException.class);
+        verify(appointmentTokenGenerator, never()).nextToken(any(), any());
+    }
+
+    @Test
+    void reschedule_sameDay_keepsToken() {
+        Instant original = LocalDate.now(AppointmentTokenGenerator.ZONE)
+                .plusDays(2)
+                .atTime(10, 0)
+                .atZone(AppointmentTokenGenerator.ZONE)
+                .toInstant();
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1")
+                .hospitalId("h1")
+                .doctorId("d1")
+                .appointmentDateTime(original)
+                .tokenNumber(4)
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        DoctorAppointmentBookingResponse response = service.reschedule("a1", "h1",
+                RescheduleAppointmentRequest.builder()
+                        .appointmentDateTime(original.plus(3, ChronoUnit.HOURS))
+                        .build());
+
+        assertThat(response.getTokenNumber()).isEqualTo(4);
+        verify(appointmentTokenGenerator, never()).nextToken(any(), any());
+    }
+
+    @Test
+    void reschedule_toAnotherDay_issuesNewToken() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1")
+                .hospitalId("h1")
+                .doctorId("d1")
+                .appointmentDateTime(future)
+                .tokenNumber(4)
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+        Instant nextDay = future.plus(1, ChronoUnit.DAYS);
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(appointmentTokenGenerator.nextToken("d1", nextDay)).thenReturn(12);
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        DoctorAppointmentBookingResponse response = service.reschedule(
+                "a1", "h1", RescheduleAppointmentRequest.builder().appointmentDateTime(nextDay).build());
+
+        assertThat(response.getTokenNumber()).isEqualTo(12);
     }
 
     @Test

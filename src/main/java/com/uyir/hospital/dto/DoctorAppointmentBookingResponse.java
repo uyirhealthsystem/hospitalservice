@@ -32,6 +32,7 @@ public class DoctorAppointmentBookingResponse {
     private String doctorId;
     private Instant appointmentDateTime;
     private Integer durationMinutes;
+    private Integer tokenNumber;
     private ConsultationType consultationType;
     private VisitType visitType;
     private String previousAppointmentId;
