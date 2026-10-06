@@ -43,7 +43,8 @@ public class MongoIndexConfig {
         IndexOperations appointmentBookingIndexOps = mongoTemplate.indexOps(DoctorAppointmentBooking.class);
         appointmentBookingIndexOps.ensureIndex(new Index().on("hospitalId", Direction.ASC));
         appointmentBookingIndexOps.ensureIndex(new Index().on("patientId", Direction.ASC));
-        appointmentBookingIndexOps.ensureIndex(new Index().on("doctorId", Direction.ASC));
+        appointmentBookingIndexOps.ensureIndex(
+                new Index().on("doctorId", Direction.ASC).on("appointmentDateTime", Direction.ASC));
 
         IndexOperations analyticsSnapshotIndexOps = mongoTemplate.indexOps(AnalyticsSnapshot.class);
         analyticsSnapshotIndexOps.ensureIndex(new Index().on("district", Direction.ASC).on("createdAt", Direction.DESC));

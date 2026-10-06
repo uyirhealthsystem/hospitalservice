@@ -1,8 +1,10 @@
 package com.uyir.hospital.controller;
 
+import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
+import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.DoctorAppointmentBookingService;
@@ -63,5 +65,21 @@ public class DoctorAppointmentBookingController {
             @PathVariable String id, @Valid @RequestBody RescheduleAppointmentRequest request) {
         String hospitalId = currentUserContext.requireRole(Role.HOSPITAL);
         return doctorAppointmentBookingService.reschedule(id, hospitalId, request);
+    }
+
+    // Patient or hospital: either side can cancel its own appointment, with a reason.
+    @PatchMapping("/{id}/cancel")
+    public DoctorAppointmentBookingResponse cancel(
+            @PathVariable String id, @Valid @RequestBody CancelAppointmentRequest request) {
+        String userId = currentUserContext.requireAnyRole(Role.PATIENT, Role.HOSPITAL);
+        return doctorAppointmentBookingService.cancel(id, userId, currentUserContext.getRole(), request);
+    }
+
+    // Hospital-only: closes out an appointment as COMPLETED or NO_SHOW once its time has come.
+    @PatchMapping("/{id}/status")
+    public DoctorAppointmentBookingResponse updateStatus(
+            @PathVariable String id, @Valid @RequestBody UpdateAppointmentStatusRequest request) {
+        String hospitalId = currentUserContext.requireRole(Role.HOSPITAL);
+        return doctorAppointmentBookingService.updateStatus(id, hospitalId, request);
     }
 }
