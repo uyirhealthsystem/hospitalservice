@@ -1,0 +1,14 @@
+cloudResources:
+  collections:
+    ../docs/Hospital-Service.postman_collection.json: 32666051-5414dcc0-5f54-4444-8cf6-c26ad17b931f
+  environments:
+    ../docs/Hospital-Service.ec2.postman_environment.json: 32666051-32e08f2b-d1fa-4756-a7fa-2536a2747310
+    ../docs/Hospital-Service.postman_environment.json: 32666051-a3d71c25-6df1-4422-bcf1-9d5acd55837a
+localResources:
+  collections:
+    - ../docs/Hospital-Service.postman_collection.json
+  environments:
+    - ../docs/Hospital-Service.ec2.postman_environment.json
+    - ../docs/Hospital-Service.postman_environment.json
+workspace:
+  id: 5fecad44-56b1-4fe9-8fc4-3d2d0212662d
