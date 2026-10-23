@@ -16,6 +16,7 @@ public class DoctorMapper {
                 .tnmcNumber(request.getTnmcNumber())
                 .qualifications(request.getQualifications())
                 .specialties(request.getSpecialties())
+                .emergencyConditionsHandled(request.getEmergencyConditionsHandled())
                 .yearsOfExperience(request.getYearsOfExperience())
                 .consultationFee(request.getConsultationFee())
                 .availability(request.getAvailability())
@@ -34,6 +35,7 @@ public class DoctorMapper {
         doctor.setTnmcNumber(request.getTnmcNumber());
         doctor.setQualifications(request.getQualifications());
         doctor.setSpecialties(request.getSpecialties());
+        doctor.setEmergencyConditionsHandled(request.getEmergencyConditionsHandled());
         doctor.setYearsOfExperience(request.getYearsOfExperience());
         doctor.setConsultationFee(request.getConsultationFee());
         doctor.setAvailability(request.getAvailability());
@@ -53,6 +55,7 @@ public class DoctorMapper {
                 .tnmcNumber(doctor.getTnmcNumber())
                 .qualifications(doctor.getQualifications())
                 .specialties(doctor.getSpecialties())
+                .emergencyConditionsHandled(doctor.getEmergencyConditionsHandled())
                 .yearsOfExperience(doctor.getYearsOfExperience())
                 .consultationFee(doctor.getConsultationFee())
                 .availability(doctor.getAvailability())

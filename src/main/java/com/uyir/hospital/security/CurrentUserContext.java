@@ -1,6 +1,8 @@
 package com.uyir.hospital.security;
 
 import com.uyir.hospital.exception.ForbiddenException;
+import com.uyir.hospital.model.Hospital;
+import com.uyir.hospital.repository.HospitalRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
@@ -16,9 +18,11 @@ public class CurrentUserContext {
     public static final String USER_ROLE_HEADER = "X-User-Role";
 
     private final HttpServletRequest request;
+    private final HospitalRepository hospitalRepository;
 
-    public CurrentUserContext(HttpServletRequest request) {
+    public CurrentUserContext(HttpServletRequest request, HospitalRepository hospitalRepository) {
         this.request = request;
+        this.hospitalRepository = hospitalRepository;
     }
 
     public String getUserId() {
@@ -39,6 +43,15 @@ public class CurrentUserContext {
 
     public String requireRole(Role required) {
         return requireAnyRole(required);
+    }
+
+    // A HOSPITAL caller's X-User-Id is its AuthService user id, not the hospital id - resolve the
+    // hospital it created (Hospital.userId) and return that hospital's id.
+    public String requireHospitalId() {
+        String userId = requireRole(Role.HOSPITAL);
+        return hospitalRepository.findByUserId(userId)
+                .map(Hospital::getId)
+                .orElseThrow(() -> new ForbiddenException("No hospital is registered for user '" + userId + "'"));
     }
 
     public String requireAnyRole(Role... allowed) {

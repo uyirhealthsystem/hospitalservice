@@ -7,8 +7,10 @@ import com.uyir.hospital.dto.AnalyticsSnapshotRequest;
 import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
+import com.uyir.hospital.dto.HospitalAnalyticsReport;
 import com.uyir.hospital.dto.HospitalAnalyticsRequest;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
+import com.uyir.hospital.dto.HospitalMetricsRequest;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.HospitalAnalyticsService;
@@ -23,7 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// ADMIN / SUPER_ADMIN only. The Admin service owns which district an admin manages and passes
+// ADMIN / SUPER_ADMIN only, except POST /my-hospital (HOSPITAL, its own hospital only).
+// The Admin service owns which district an admin manages and passes
 // it in the request body - this service doesn't look admins up, it just scopes to it.
 // Every endpoint is POST with a JSON body (same approach as DoctorController's /list and
 // /search) so no filter data travels in the URL. The all-in-one GET report lives in
@@ -90,6 +93,15 @@ public class HospitalAnalyticsController {
         requireAdmin();
         analyticsService.deleteSnapshot(request.getDistrict().trim(), request.getSnapshotId());
         return ResponseEntity.noContent().build();
+    }
+
+    // HOSPITAL only: the caller's own hospital (resolved from X-User-Id) - its figures plus daily
+    // trends. No district in the body; optional fromDate/toDate, empty body = last 30 days.
+    @PostMapping("/my-hospital")
+    public HospitalAnalyticsReport getMyHospitalReport(@RequestBody(required = false) HospitalMetricsRequest request) {
+        String hospitalId = currentUserContext.requireHospitalId();
+        HospitalMetricsRequest range = request != null ? request : new HospitalMetricsRequest();
+        return analyticsService.getHospitalReport(hospitalId, range.getFromDate(), range.getToDate());
     }
 
     private String requireAdmin() {

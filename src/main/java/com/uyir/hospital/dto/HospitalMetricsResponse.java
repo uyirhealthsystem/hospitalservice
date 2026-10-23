@@ -22,6 +22,10 @@ public class HospitalMetricsResponse {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String district;
 
+    // Only set on the my-hospital endpoint
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String hospitalId;
+
     private LocalDate fromDate;
     private LocalDate toDate;
     private Instant generatedAt;
@@ -62,7 +66,7 @@ public class HospitalMetricsResponse {
         // Requested within the date range
         private long total;
         private Map<EmergencyBookingStatus, Long> byStatus;
-        // REQUESTED right now, regardless of date range
+        // REQUESTED or ACCEPTED right now (still in progress), regardless of date range
         private long openNow;
     }
 

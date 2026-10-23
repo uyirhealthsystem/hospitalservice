@@ -4,6 +4,8 @@ Base URL: `/api/v1/hospital` (every path contains `hospital` per project convent
 
 All request/response bodies are JSON. All endpoints are unauthenticated for now (see `docs/ARCHITECTURE.md` → Security).
 
+> **UI team:** every dropdown value (fixed lists, all 131 specialties, the 16 emergency conditions, districts) is in [`UI-Form.md`](UI-Form.md). Form rules and complete sample payloads for Create Hospital / Create Doctor are in [`UI-Form-Payloads.md`](UI-Form-Payloads.md).
+
 ---
 
 ## Create a hospital
@@ -94,6 +96,22 @@ Every hospital whose `address.district` matches `{district}`, case-insensitively
 ```bash
 curl "http://localhost:8080/api/v1/hospital/district/Chennai"
 curl "http://localhost:8080/api/v1/hospital/district/Chennai?active=true"
+```
+
+## My hospital profile
+
+`GET /api/v1/hospital/me` — headers `X-User-Role: HOSPITAL`, `X-User-Id: <AuthService user id>`
+
+The logged-in hospital's own profile, for the hospital portal after login. The hospital is resolved from the `X-User-Id` header (the user that called `POST /api/v1/hospital`); there is no id in the path, so a hospital can only ever read its own profile. Returns a single full `HospitalResponse`, including deactivated hospitals.
+
+| Status | When |
+|---|---|
+| `200` | Profile found |
+| `403` | `X-User-Role` isn't `HOSPITAL`, or `X-User-Id` is missing |
+| `404` | This user hasn't created a hospital yet (portal should show the registration form) |
+
+```bash
+curl "http://localhost:8080/api/v1/hospital/me" -H "X-User-Role: HOSPITAL" -H "X-User-Id: hospital-user-001"
 ```
 
 ## Update a hospital
@@ -199,7 +217,7 @@ Every 4xx/5xx response body is an `ApiError`:
 | Field | Type | Notes |
 |---|---|---|
 | `bedCapacity` | BedCapacity | `{ general, icu, nicu }` — each an integer bed count |
-| `specialtyDepartments` | string[] | free-text department names |
+| `specialtyDepartments` | string[] | **Must come from the specialty master list** (`GET /api/v1/hospital/specialties`), the same rule as a doctor's `specialties`. Codes or exact names are accepted, stored as official names without duplicates. An unknown value → `400` (`facilities.specialtyDepartments: unknown ...`) |
 | `diagnosticUnits` | DiagnosticUnits | `{ lab, scanCentre, pathology }` — each a boolean |
 | `labDetails` | LabDetails | `{ labName, qualification, facilities[], scanCentreName, pcpndtRegistrationNumber }` |
 
@@ -208,7 +226,7 @@ Every 4xx/5xx response body is an `ApiError`:
 | Field | Type | Notes |
 |---|---|---|
 | `handlesEmergencies` | boolean | Gate for the next field |
-| `specialtyEmergencyConditionsHandled` | string[] | Populated only when `handlesEmergencies` is `true`; expected to match the notified list of 13 specialty emergency conditions |
+| `specialtyEmergencyConditionsHandled` | string[] | Populated only when `handlesEmergencies` is `true`. **Must be among the 16 SOS emergency conditions** (`GET /api/v1/hospital/emergency-conditions`, codes `EMG001`-`EMG016` or exact names). Independent of `facilities.specialtyDepartments` (departments are for appointments). Stored as official names. Unknown value → `400` naming it. A doctor on duty here must also handle the condition for the hospital to appear in SOS |
 | `ambulanceAvailable` | boolean | |
 | `ambulanceTypes` | enum[] | `NORMAL`, `BLS`, `VENTILATOR` |
 | `ambulance24x7Available` | boolean | |
@@ -270,7 +288,7 @@ Every 4xx/5xx response body is an `ApiError`:
   },
   "emergencyServices": {
     "handlesEmergencies": true,
-    "specialtyEmergencyConditionsHandled": ["Cardiac Arrest", "Stroke", "Trauma"],
+    "specialtyEmergencyConditionsHandled": ["Chest Pain / Sweating / Palpitation", "Stroke / Paralysis / Sudden Weakness", "Fall / Fracture"],
     "ambulanceAvailable": true,
     "ambulanceTypes": ["BLS", "VENTILATOR"],
     "ambulance24x7Available": true,
@@ -335,6 +353,7 @@ curl -X POST http://localhost:8080/api/v1/hospital/doctors \
     "tnmcNumber": "TNMC-2011-004521",
     "qualifications": ["MBBS", "MD Cardiology"],
     "specialties": ["Cardiology"],
+    "emergencyConditionsHandled": ["EMG001", "EMG004"],
     "yearsOfExperience": 15,
     "consultationFee": 800,
     "availability": { "type": "CUSTOM_TIMINGS", "customTimings": "Mon-Fri 10am-1pm" },
@@ -441,7 +460,8 @@ Clears `currentHospitalId` and `checkedInAt` to `null`. Idempotent — checking 
 | `sex` | enum | yes | `MALE`, `FEMALE`, `OTHER` |
 | `tnmcNumber` | string | yes | Unique across all doctors |
 | `qualifications` | string[] | no | |
-| `specialties` | string[] | no | |
+| `specialties` | string[] | no | **Must come from the master list** at `GET /api/v1/hospital/specialties` (public; 30 categories, 131 entries, from `src/main/resources/specialties.json`). Send codes (`"CAR001"`) or exact names (any case). They're stored and returned as official names without duplicates. An unknown value → `400` naming every bad entry. Doctor search's `specialty` also accepts a code. For appointments and search only. |
+| `emergencyConditionsHandled` | string[] | no | Which of the 16 SOS emergency conditions this doctor attends (`GET /api/v1/hospital/emergency-conditions`, codes `EMG001`-`EMG016` or exact names). Stored as official names; unknown → `400`. Independent of `specialties`. **A hospital only appears in SOS / accepts an emergency booking while a doctor who chose that condition is on duty there.** |
 | `yearsOfExperience` | integer | no | |
 | `consultationFee` | decimal | no | |
 | `availability` | Availability | no | `{ type, customTimings }` — `type` is one of the `AvailabilityType` enum values; `customTimings` is free text, populated only when `type` is `CUSTOM_TIMINGS` |
@@ -469,19 +489,21 @@ Cross-cutting feature: joins `Hospital` (geospatial + emergency-handling data) a
 
 | Query param | Type | Required | Notes |
 |---|---|---|---|
-| `emergencyType` | string | yes | Case-insensitive match against a hospital's `emergencyServices.specialtyEmergencyConditionsHandled` |
+| `emergencyType` | string | yes | One of the 16 conditions from `GET /api/v1/hospital/emergency-conditions`: code (`EMG002`) or exact name, any case. Anything else → `400` |
 | `longitude` | double | yes | |
 | `latitude` | double | yes | |
 | `radiusKm` | double | no | default `10` |
 
 ```bash
-curl "http://localhost:8080/api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10"
+curl "http://localhost:8080/api/v1/hospital/emergency-sos?emergencyType=EMG001&longitude=80.27&latitude=13.08&radiusKm=10"
 ```
 
-**How a hospital qualifies** — all three, in order:
+**How a hospital qualifies**: all of these, in order:
 1. Within `radiusKm` of the given point (same `2dsphere` `$near` query `/nearby` uses — results come back nearest-first already, no separate distance sort needed).
-2. `active == true` **and** `emergencyServices.handlesEmergencies == true` **and** `emergencyType` appears in `specialtyEmergencyConditionsHandled` (case-insensitive).
-3. At least one `Doctor` currently checked in there (`currentHospitalId` equals this hospital's id) with `active == true`. A hospital with zero currently-checked-in doctors is **excluded from the results entirely** — not returned with a "no doctor" flag, just left out.
+2. `active == true` **and** `emergencyServices.handlesEmergencies == true` **and** the condition's official name appears in the hospital's `specialtyEmergencyConditionsHandled`.
+3. At least one doctor **on duty there who handles the condition**: `active == true`, checked in there (`currentHospitalId` equals this hospital's id; check-in already requires a `hospitalAssociations` entry for it), holding one of the hospital's seats, **and** the condition appears in the doctor's `emergencyConditionsHandled`. Otherwise the hospital is **excluded from the results entirely**, not returned with a "no doctor" flag. `availableDoctorCount` / `availableSpecialties` count only those matching doctors.
+
+Emergency booking re-checks the same rules (shared `EmergencyCoverage`): rules 1-2 failing → `400`; no matching doctor on duty → **`409`** (`No doctor on duty at hospital ... right now - choose another hospital`).
 
 Returns a plain array of `EmergencyHospitalSuggestion`, not paginated (same reasoning as `/nearby` — `$near` doesn't produce a cheap total count):
 
@@ -498,11 +520,96 @@ Returns a plain array of `EmergencyHospitalSuggestion`, not paginated (same reas
 ]
 ```
 
-> **Doctor specialty is not matched against the emergency type.** `availableDoctorCount` / `availableSpecialties` reflect *any* active doctor currently checked in at that hospital, not specifically a cardiologist for a "Cardiac Arrest" case. There's no clean mapping in the data model between emergency condition names (`specialtyEmergencyConditionsHandled`, e.g. "Cardiac Arrest") and doctor specialties (`Doctor.specialties`, e.g. "Cardiology") — inventing one felt worse than being upfront that "doctor availability" here means general presence, not a specialty-matched guarantee.
 
 > **Inherits the check-in feature's weak point.** This reads `Doctor.currentHospitalId` directly — if a doctor forgot to check out after leaving (see [Live check-in / check-out](#live-check-in--check-out)), a hospital can appear as having emergency coverage it no longer actually has.
 
 **Also fixed while building this** (affects `/nearby` too, not just this endpoint): a missing or malformed required query parameter — omitting `emergencyType`, or passing non-numeric `longitude` — previously fell through to the generic 500 handler instead of a proper `400`. `GlobalExceptionHandler` now handles `MissingServletRequestParameterException` and `MethodArgumentTypeMismatchException` explicitly.
+
+---
+
+# Emergency Booking Status Flow
+
+Base URL: `/api/v1/hospital/emergency-bookings`. A patient's booking starts as `REQUESTED`: the hospital hasn't yet confirmed it can take the case. After that, the hospital or the patient moves it on:
+
+```
+REQUESTED ──accept──► ACCEPTED ──complete──► COMPLETED      (hospital)
+    │                    │
+    ├──reject──► REJECTED│                                     (hospital, with reason)
+    └──cancel──► CANCELLED ◄┘                                  (patient, with reason)
+```
+
+| Endpoint | Caller | From → To | Body | Sets |
+|---|---|---|---|---|
+| `PATCH /{id}/accept` | HOSPITAL | REQUESTED → ACCEPTED | — | `acceptedAt` |
+| `PATCH /{id}/reject` | HOSPITAL | REQUESTED → REJECTED | `{ "reason": "..." }` | `rejectedAt`, `rejectionReason` |
+| `PATCH /{id}/complete` | HOSPITAL | ACCEPTED → COMPLETED | — | `completedAt` |
+| `PATCH /{id}/cancel` | PATIENT | REQUESTED or ACCEPTED → CANCELLED | `{ "reason": "..." }` | `cancelledAt`, `cancellationReason` |
+
+- **HOSPITAL** calls: `X-User-Role: HOSPITAL` and `X-User-Id: <AuthService user id>`. The hospital is found by `Hospital.userId` and must be the one the booking was made to. **PATIENT** calls: `X-User-Id` must be the booking's `patientId`.
+- `reason` is required, at most 500 characters.
+- REJECTED, CANCELLED and COMPLETED are final.
+- Every call returns the updated `EmergencyBookingResponse`, which now also carries the timestamps and reasons above.
+
+| Status | When |
+|---|---|
+| `400` | Missing or blank `reason` |
+| `403` | Wrong role, or the booking belongs to another hospital or patient |
+| `404` | No booking with that id |
+| `409` | The booking isn't in a status this change allows, e.g. accepting a CANCELLED booking. The message names the current status. |
+
+The status check and the update run as one atomic Mongo `findAndModify` that matches only if the status is still an allowed one. So if a patient cancels at the same moment the hospital accepts, one succeeds and the other gets `409`; neither silently overwrites the other.
+
+In the metrics, `emergencyBookings.openNow` counts REQUESTED **and** ACCEPTED bookings (still in progress). `byStatus` lists all five statuses.
+
+## New-booking alerts to the hospital
+
+When a patient creates an emergency booking, the hospital is alerted automatically in two ways:
+
+| Channel | How | Delivered by |
+|---|---|---|
+| **Live dashboard** | `GET /api/v1/hospital/emergency-bookings/stream`, Server-Sent Events | hospitalservice |
+| **Email** to `contactDetails.email` | backup channel, skipped if the hospital has no email | notification-service |
+
+```
+POST /emergency-bookings ─► save ─► Kafka "hospital.events" ─┬─► notification-service ─► email
+                                    (EmergencyBookingRequested)  └─► every hospitalservice pod ─► open dashboards (SSE)
+```
+
+Alerting is best-effort and never fails or slows the booking. If Kafka is down the booking still succeeds; no email goes out, and only dashboards connected to the pod that took the booking are alerted live. Either way the booking appears in `GET /emergency-bookings`.
+
+### `GET /stream` (HOSPITAL)
+
+`X-User-Role: HOSPITAL`, the same as the other hospital calls. It responds `text/event-stream`, and the stream stays open (up to `hospital.events.sse-timeout`, 30 min by default):
+
+```
+:connected
+
+id:665f1c...
+event:emergency-booking-requested
+data:{"bookingId":"665f1c...","hospitalId":"h1","hospitalName":"City Hospital","hospitalEmail":"er@city.test","patientName":"John Doe","patientPhone":"9999999999","emergencyType":"Chest Pain / Sweating / Palpitation","requestedAt":"2026-10-19T10:00:00Z"}
+
+:ping
+```
+
+- Only that hospital's bookings arrive. A hospital can have several dashboards open, and each one gets the alert.
+- `:ping` comments every 10s keep the connection alive through the gateway's 15s idle timeout.
+- **Client:** the gateway takes the token only as an `Authorization: Bearer` header, which the browser's built-in `EventSource` cannot send. Use a fetch-based SSE client instead, such as `@microsoft/fetch-event-source`.
+- **On every (re)connect, refetch `GET /emergency-bookings`.** Alerts are not replayed, so anything that arrived while the dashboard was disconnected only shows up in the list.
+- Wrong role → `403`.
+
+### Event contract (`hospital.events`, key = hospitalId)
+
+```json
+{
+  "eventType": "EmergencyBookingRequested",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-19T10:00:00.123Z",
+  "data": { "bookingId": "...", "hospitalId": "...", "hospitalName": "...", "hospitalEmail": "... or null",
+            "patientName": "...", "patientPhone": "...", "emergencyType": "...", "requestedAt": "2026-10-19T10:00:00Z" }
+}
+```
+
+Config: `KAFKA_BROKERS`, plus `HOSPITAL_EVENTS_PROVIDER` (`kafka` by default; `local` = in-process only, with no email and single-instance dashboards, for local dev).
 
 ---
 
@@ -569,7 +676,7 @@ curl -X POST http://localhost:8080/api/v1/hospital/analytics/summary \
   "emergencyBookings": {
     "total": 214,
     "byStatus": { "REQUESTED": 20, "CANCELLED": 14, "COMPLETED": 180 },
-    "byEmergencyType": { "Cardiac Arrest": 61, "Stroke": 40, "Road Traffic Accident": 33 }
+    "byEmergencyType": { "Chest Pain / Sweating / Palpitation": 61, "Stroke / Paralysis / Sudden Weakness": 40, "Road Traffic Accident": 33 }
   },
   "appointments": {
     "total": 1530,
@@ -668,8 +775,8 @@ curl -X POST http://localhost:8080/api/v1/hospital/metrics \
   "doctors": { "total": 940, "active": 901, "checkedInNow": 233 },
   "emergencyBookings": {
     "total": 418,
-    "byStatus": { "REQUESTED": 12, "CANCELLED": 31, "COMPLETED": 375 },
-    "openNow": 15
+    "byStatus": { "REQUESTED": 12, "ACCEPTED": 4, "REJECTED": 6, "CANCELLED": 31, "COMPLETED": 365 },
+    "openNow": 19
   },
   "appointments": {
     "total": 2210,
@@ -684,7 +791,7 @@ curl -X POST http://localhost:8080/api/v1/hospital/metrics \
 | `hospitals.handlingEmergencies` | Active hospitals with `emergencyServices.handlesEmergencies = true` |
 | `doctors.checkedInNow` | Active doctors with a `currentHospitalId` (checked in anywhere) |
 | `emergencyBookings.total` / `byStatus` | Requested (`requestedAt`) within the range; every status is always present |
-| `emergencyBookings.openNow` | All bookings currently `REQUESTED`, ignoring the range |
+| `emergencyBookings.openNow` | All bookings currently `REQUESTED` or `ACCEPTED` (still in progress), ignoring the range |
 | `appointments.total` / `byStatus` | Scheduled (`appointmentDateTime`) within the range; every status is always present |
 | `appointments.upcoming` | `CONFIRMED` or `RESCHEDULED` appointments scheduled from now on, ignoring the range |
 
@@ -708,7 +815,7 @@ curl -X POST http://localhost:8080/api/v1/hospital/metrics/district \n  -H "Cont
   "generatedAt": "2026-10-03T06:15:00Z",
   "hospitals": { "total": 7, "active": 6, "inactive": 1, "handlingEmergencies": 6 },
   "doctors": { "total": 12, "active": 11, "checkedInNow": 4 },
-  "emergencyBookings": { "total": 9, "byStatus": { "REQUESTED": 1, "CANCELLED": 2, "COMPLETED": 6 }, "openNow": 1 },
+  "emergencyBookings": { "total": 9, "byStatus": { "REQUESTED": 1, "ACCEPTED": 0, "REJECTED": 0, "CANCELLED": 2, "COMPLETED": 6 }, "openNow": 1 },
   "appointments": { "total": 40, "byStatus": { "CONFIRMED": 15, "RESCHEDULED": 3, "CANCELLED": 4, "COMPLETED": 18 }, "upcoming": 17 }
 }
 ```
@@ -732,4 +839,88 @@ curl "http://localhost:8080/api/v1/hospital/metrics/Chennai" \
 
 `403` if the caller isn't `ADMIN` / `SUPER_ADMIN`. A district with no hospitals returns zeros/empty arrays, not `404`. URL-encode districts with spaces (`/metrics/Kanchipuram%20East`). Not to be confused with `POST /metrics/district` above, which returns the counts-only shape.
 
+## A hospital's own metrics and analytics
+
+HOSPITAL callers can see **only their own hospital**. Send `X-User-Role: HOSPITAL` and `X-User-Id: <AuthService user id>`; the service looks up the hospital that user created (`Hospital.userId`). There is no district or hospital id in the request. Both bodies are optional `{ "fromDate": "yyyy-MM-dd", "toDate": "yyyy-MM-dd" }` (default: last 30 days, max 366).
+
+| Endpoint | Returns |
+|---|---|
+| `POST /api/v1/hospital/metrics/my-hospital` | Same shape as the metrics above, with `hospitalId` set (instead of `district`) and every count scoped to that hospital |
+| `POST /api/v1/hospital/analytics/my-hospital` | `{ fromDate, toDate, generatedAt, hospital: <Analytics "Per-hospital row">, trends: [ ...one point per day... ] }` |
+
+`403` if the role isn't `HOSPITAL` or the user has no hospital. The district endpoints and snapshots stay `ADMIN` / `SUPER_ADMIN` only.
+
 > **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/api/v1/hospital/actuator`, e.g. `/api/v1/hospital/actuator/health`, so every path contains `hospital`.
+
+---
+
+# Payout Account API Reference
+
+The bank account a hospital's share of patient payments is paid into. Every hospital is registered as a
+**Razorpay Route linked account** through payment-service. Razorpay calls are made only by payment-service; this
+service forwards the details and keeps the status. Only the last 4 digits of the bank account are stored or returned.
+
+HOSPITAL role only (`X-User-Id` / `X-User-Role: HOSPITAL`), plus the hospital user's `Authorization: Bearer <JWT>`,
+which is forwarded to payment-service. The hospital is resolved from `X-User-Id`.
+
+| Method | Path | |
+|---|---|---|
+| `PUT` | `/api/v1/hospital/payout-account` | Set up, continue (after `NEEDS_CLARIFICATION` or a failed attempt), or change the bank account |
+| `GET` | `/api/v1/hospital/payout-account` | Current status. While the account is not `ACTIVATED`, the status is refreshed from Razorpay first |
+
+Send the full body on every `PUT`. Steps already done at Razorpay are skipped. Once the Razorpay account exists,
+only `bankAccount` can still change; business details are then changed through Razorpay support.
+
+```json
+{
+  "legalBusinessName": "Sri Ram Hospital Pvt Ltd",
+  "businessType": "private_limited",
+  "contactName": "Ravi Kumar",
+  "email": "accounts@sriram.in",
+  "phone": "9876543210",
+  "address": { "street1": "12 Anna Salai", "street2": null, "city": "Chennai", "state": "Tamil Nadu", "postalCode": "600002" },
+  "pan": "AAACS1234C",
+  "gst": null,
+  "stakeholder": { "name": "Ravi Kumar", "email": "ravi@sriram.in", "phone": null, "pan": "ABCPK1234D" },
+  "bankAccount": { "accountNumber": "123456789012", "ifscCode": "HDFC0000317", "beneficiaryName": "Sri Ram Hospital" },
+  "tncAccepted": true
+}
+```
+
+`businessType`: `individual`, `proprietorship`, `partnership`, `private_limited`, `public_limited`, `llp`, `ngo`,
+`trust`, `society`, `not_yet_registered`, `educational_institutes`. `pan` is the business PAN; `stakeholder.pan` is
+the signatory's personal PAN. `tncAccepted` must be `true` (Razorpay's Route terms).
+
+Response:
+
+```json
+{
+  "hospitalId": "h-1",
+  "status": "UNDER_REVIEW",
+  "payoutsEnabled": false,
+  "requirements": [],
+  "legalBusinessName": "Sri Ram Hospital Pvt Ltd",
+  "bankAccountLast4": "9012",
+  "ifscCode": "HDFC0000317",
+  "beneficiaryName": "Sri Ram Hospital",
+  "activatedAt": null,
+  "createdAt": "2026-10-18T12:09:39Z",
+  "updatedAt": "2026-10-18T12:09:39Z"
+}
+```
+
+| `status` | Meaning |
+|---|---|
+| `PENDING_DETAILS` | Razorpay is still missing details: PUT again |
+| `UNDER_REVIEW` | Razorpay is verifying the KYC and bank account (penny drop) |
+| `NEEDS_CLARIFICATION` | `requirements` lists what to fix, e.g. `settlements.ifsc_code (field_missing)`; fix it and PUT again |
+| `ACTIVATED` | `payoutsEnabled: true`: payments can be paid out to this account |
+| `SUSPENDED` | Razorpay suspended the account; contact Razorpay support |
+
+Errors: `400` for a validation error, or Razorpay rejecting the details (the message gives Razorpay's reason,
+e.g. "The pan field is invalid."); `403` when the caller is not a HOSPITAL; `404` on `GET` before any `PUT`;
+`409` while another `PUT` for the same account is in progress; `503` when payment-service or Razorpay is
+unavailable (retry).
+
+Config: `PAYOUT_PROVIDER` (`http`, or `mock` to activate every account at once for local testing) and
+`PAYMENT_SERVICE_URL`.

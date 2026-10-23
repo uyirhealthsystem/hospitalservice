@@ -22,6 +22,7 @@ import lombok.NoArgsConstructor;
 public class HospitalResponse {
 
     private String id;
+    private String userId;
     private String hospitalName;
     private String registrationNumber;
     private OwnershipType ownershipType;

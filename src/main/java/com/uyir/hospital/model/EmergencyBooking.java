@@ -29,5 +29,11 @@ public class EmergencyBooking {
     private EmergencyBookingStatus status;
 
     private Instant requestedAt;
+    private Instant acceptedAt;
+    private Instant rejectedAt;
+    private String rejectionReason;
+    private Instant cancelledAt;
+    private String cancellationReason;
+    private Instant completedAt;
     private Instant updatedAt;
 }

@@ -8,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.uyir.hospital.catalog.EmergencyConditionCatalog;
+import com.uyir.hospital.catalog.SpecialtyCatalog;
 import com.uyir.hospital.dto.DoctorRequest;
 import com.uyir.hospital.dto.DoctorResponse;
 import com.uyir.hospital.dto.DoctorSearchRequest;
@@ -32,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 class DoctorServiceImplTest {
@@ -44,11 +47,73 @@ class DoctorServiceImplTest {
 
     private final DoctorMapper doctorMapper = new DoctorMapper();
 
+    // The real master list (specialties.json), so these tests also catch a broken resource file.
+    private final SpecialtyCatalog specialtyCatalog = new SpecialtyCatalog(JsonMapper.builder().build());
+    private final EmergencyConditionCatalog emergencyConditionCatalog = new EmergencyConditionCatalog(JsonMapper.builder().build());
+
     private DoctorServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new DoctorServiceImpl(doctorRepository, hospitalRepository, doctorMapper);
+        service = new DoctorServiceImpl(doctorRepository, hospitalRepository, doctorMapper, specialtyCatalog, emergencyConditionCatalog);
+    }
+
+    @Test
+    void create_emergencyConditionsByCodeOrName_savedAsOfficialNames() {
+        when(doctorRepository.existsByTnmcNumber("TNMC-123")).thenReturn(false);
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DoctorResponse response = service.create(validRequestBuilder()
+                .emergencyConditionsHandled(List.of("EMG002", "fall / fracture", "EMG002"))
+                .build());
+
+        assertThat(response.getEmergencyConditionsHandled())
+                .containsExactly("Stroke / Paralysis / Sudden Weakness", "Fall / Fracture");
+    }
+
+    @Test
+    void create_emergencyConditionsIndependentOfSpecialties() {
+        // A dermatologist may still say they handle allergy emergencies - the two lists aren't linked.
+        when(doctorRepository.existsByTnmcNumber("TNMC-123")).thenReturn(false);
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DoctorResponse response = service.create(validRequestBuilder()
+                .specialties(List.of("DER001"))
+                .emergencyConditionsHandled(List.of("EMG013"))
+                .build());
+
+        assertThat(response.getSpecialties()).containsExactly("Dermatology");
+        assertThat(response.getEmergencyConditionsHandled()).containsExactly("Allergy / Anaphylaxis");
+    }
+
+    @Test
+    void create_unknownEmergencyCondition_rejectedAndNeverSaved() {
+        assertThatThrownBy(() -> service.create(validRequestBuilder()
+                        .emergencyConditionsHandled(List.of("Cardiac Arrest"))
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("emergencyConditionsHandled")
+                .hasMessageContaining("Cardiac Arrest");
+
+        verify(doctorRepository, never()).save(any());
+    }
+
+    @Test
+    void update_emergencyConditions_replacedWithOfficialNames() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(existingDoctor()));
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DoctorResponse response = service.update("d1", validRequestBuilder().emergencyConditionsHandled(List.of("EMG001")).build());
+
+        assertThat(response.getEmergencyConditionsHandled()).containsExactly("Chest Pain / Sweating / Palpitation");
+    }
+
+    @Test
+    void create_withoutEmergencyConditions_isAllowed() {
+        when(doctorRepository.existsByTnmcNumber("TNMC-123")).thenReturn(false);
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.create(validRequestBuilder().build()).getEmergencyConditionsHandled()).isNull();
     }
 
     private DoctorRequest.DoctorRequestBuilder validRequestBuilder() {
@@ -86,6 +151,85 @@ class DoctorServiceImplTest {
         ArgumentCaptor<Doctor> captor = ArgumentCaptor.forClass(Doctor.class);
         verify(doctorRepository).save(captor.capture());
         assertThat(captor.getValue().isActive()).isTrue();
+    }
+
+    @Test
+    void create_specialtiesByCodeOrName_savedAsOfficialNamesWithoutDuplicates() {
+        when(doctorRepository.existsByTnmcNumber("TNMC-123")).thenReturn(false);
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DoctorResponse response = service.create(validRequestBuilder()
+                .specialties(List.of("CAR001", " interventional cardiology ", "Cardiology"))
+                .build());
+
+        assertThat(response.getSpecialties()).containsExactly("Cardiology", "Interventional Cardiology");
+    }
+
+    @Test
+    void create_specialtyNotInMasterList_rejectedWithEveryBadValueAndNeverSaved() {
+        assertThatThrownBy(() -> service.create(validRequestBuilder()
+                        .specialties(List.of("Cardiology", "Heart Doctor", "XYZ999"))
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Heart Doctor")
+                .hasMessageContaining("XYZ999")
+                .hasMessageContaining("/api/v1/hospital/specialties");
+
+        verify(doctorRepository, never()).save(any());
+    }
+
+    @Test
+    void create_withoutSpecialties_isAllowed() {
+        when(doctorRepository.existsByTnmcNumber("TNMC-123")).thenReturn(false);
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.create(validRequestBuilder().build()).getSpecialties()).isNull();
+    }
+
+    @Test
+    void update_specialtyNotInMasterList_rejectedAndNeverSaved() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(existingDoctor()));
+
+        assertThatThrownBy(() -> service.update("d1", validRequestBuilder().specialties(List.of("Heart Doctor")).build()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(doctorRepository, never()).save(any());
+    }
+
+    @Test
+    void update_specialtyCodes_savedAsOfficialNames() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(existingDoctor()));
+        when(doctorRepository.save(any(Doctor.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DoctorResponse response = service.update("d1", validRequestBuilder().specialties(List.of("NEU001", "NEU003")).build());
+
+        assertThat(response.getSpecialties()).containsExactly("Neurology", "Stroke Specialist");
+    }
+
+    @Test
+    void search_bySpecialtyCode_searchesByOfficialName() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(doctorRepository.search(any(DoctorSearchCriteria.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        service.search(DoctorSearchRequest.builder().specialty("CAR001").build(), pageable);
+
+        ArgumentCaptor<DoctorSearchCriteria> captor = ArgumentCaptor.forClass(DoctorSearchCriteria.class);
+        verify(doctorRepository).search(captor.capture(), eq(pageable));
+        assertThat(captor.getValue().getSpecialty()).isEqualTo("Cardiology");
+    }
+
+    @Test
+    void search_bySpecialtyNotInMasterList_searchesAsTyped() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(doctorRepository.search(any(DoctorSearchCriteria.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        service.search(DoctorSearchRequest.builder().specialty("Old Free Text").build(), pageable);
+
+        ArgumentCaptor<DoctorSearchCriteria> captor = ArgumentCaptor.forClass(DoctorSearchCriteria.class);
+        verify(doctorRepository).search(captor.capture(), eq(pageable));
+        assertThat(captor.getValue().getSpecialty()).isEqualTo("Old Free Text");
     }
 
     @Test

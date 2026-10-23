@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Business metrics, service-wide or for one district. ADMIN / SUPER_ADMIN only. Like the analytics
+// Business metrics, service-wide or for one district (ADMIN / SUPER_ADMIN only), or for the
+// caller's own hospital (POST /my-hospital, HOSPITAL only). Like the analytics
 // endpoints the counts are POST with the data in the body; the service-wide one accepts an empty body.
 // The exception is GET /{district}, the all-in-one district report, which takes the district in the URL.
 @RestController
@@ -45,6 +46,15 @@ public class HospitalMetricsController {
         currentUserContext.requireAnyRole(Role.ADMIN, Role.SUPER_ADMIN);
         return metricsService.getDistrictMetrics(
                 request.getDistrict().trim(), request.getFromDate(), request.getToDate());
+    }
+
+    // HOSPITAL only: the same counts for the caller's own hospital (resolved from X-User-Id).
+    // Empty body = last 30 days.
+    @PostMapping("/my-hospital")
+    public HospitalMetricsResponse getMyHospitalMetrics(@RequestBody(required = false) HospitalMetricsRequest request) {
+        String hospitalId = currentUserContext.requireHospitalId();
+        HospitalMetricsRequest range = request != null ? request : new HospitalMetricsRequest();
+        return metricsService.getHospitalMetrics(hospitalId, range.getFromDate(), range.getToDate());
     }
 
     // District in the path, no date params (always the default last 30 days).

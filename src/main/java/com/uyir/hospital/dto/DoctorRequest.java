@@ -35,6 +35,7 @@ public class DoctorRequest {
 
     private List<String> qualifications;
     private List<String> specialties;
+    private List<String> emergencyConditionsHandled;
     private Integer yearsOfExperience;
     private BigDecimal consultationFee;
 

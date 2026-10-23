@@ -15,6 +15,7 @@ import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
 import com.uyir.hospital.dto.DistrictAnalyticsReport;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
+import com.uyir.hospital.dto.HospitalAnalyticsReport;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
@@ -42,6 +43,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -318,5 +320,38 @@ class HospitalAnalyticsServiceImplTest {
 
         assertThatThrownBy(() -> service.deleteSnapshot("Chennai", "s1")).isInstanceOf(ForbiddenException.class);
         verify(snapshotRepository, never()).delete(any());
+    }
+
+    @Test
+    void getHospitalReport_onlyThatHospitalsDataWithDailyTrends() {
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital("h1", true, 50, 10, true)));
+        when(doctorRepository.findByHospitalAssociationsHospitalIdInAndActiveTrue(anyCollection()))
+                .thenReturn(List.of(doctor("d1", "h1", "h1")));
+        when(emergencyBookingRepository.findByHospitalIdsRequestedBetween(anyCollection(), any(), any()))
+                .thenReturn(List.of(
+                        emergency("h1", "Stroke", EmergencyBookingStatus.REQUESTED, ist(1, 10)),
+                        emergency("h1", "Stroke", EmergencyBookingStatus.COMPLETED, ist(3, 9))));
+        when(appointmentBookingRepository.findByHospitalIdsScheduledBetween(anyCollection(), any(), any()))
+                .thenReturn(List.of(appointment("h1", AppointmentStatus.CONFIRMED, ist(2, 9))));
+
+        HospitalAnalyticsReport report = service.getHospitalReport("h1", FROM, TO);
+
+        assertThat(report.getFromDate()).isEqualTo(FROM);
+        assertThat(report.getToDate()).isEqualTo(TO);
+        assertThat(report.getHospital().getHospitalId()).isEqualTo("h1");
+        assertThat(report.getHospital().getCheckedInDoctors()).isEqualTo(1);
+        assertThat(report.getHospital().getEmergencyBookings()).isEqualTo(2);
+        assertThat(report.getHospital().getAppointments()).isEqualTo(1);
+        assertThat(report.getTrends()).extracting(AnalyticsTrendPoint::getEmergencyBookings).containsExactly(1L, 0L, 1L);
+        assertThat(report.getTrends()).extracting(AnalyticsTrendPoint::getAppointments).containsExactly(0L, 1L, 0L);
+        verify(emergencyBookingRepository).findByHospitalIdsRequestedBetween(eq(Set.of("h1")), any(), any());
+    }
+
+    @Test
+    void getHospitalReport_unknownHospital_throwsNotFound() {
+        when(hospitalRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getHospitalReport("missing", FROM, TO))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

@@ -28,6 +28,10 @@ public class Hospital {
     @Id
     private String id;
 
+    // AuthService user id (X-User-Id) of the HOSPITAL account that created this hospital.
+    // One hospital per user - enforced in HospitalServiceImpl.create and by a unique index in MongoIndexConfig.
+    private String userId;
+
     private String hospitalName;
 
     @Indexed(unique = true)

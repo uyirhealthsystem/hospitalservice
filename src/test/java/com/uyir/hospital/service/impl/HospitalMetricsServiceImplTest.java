@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.uyir.hospital.dto.HospitalMetricsResponse;
+import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.model.Hospital;
 import com.uyir.hospital.model.embedded.EmergencyServices;
 import com.uyir.hospital.model.enums.AppointmentStatus;
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -64,9 +66,14 @@ class HospitalMetricsServiceImplTest {
                 .thenReturn(3L);
         when(emergencyBookingRepository.countByStatusRequestedBetween(EmergencyBookingStatus.COMPLETED, START, END))
                 .thenReturn(7L);
+        when(emergencyBookingRepository.countByStatusRequestedBetween(EmergencyBookingStatus.ACCEPTED, START, END))
+                .thenReturn(0L);
+        when(emergencyBookingRepository.countByStatusRequestedBetween(EmergencyBookingStatus.REJECTED, START, END))
+                .thenReturn(0L);
         when(emergencyBookingRepository.countByStatusRequestedBetween(EmergencyBookingStatus.CANCELLED, START, END))
                 .thenReturn(0L);
-        when(emergencyBookingRepository.countByStatus(EmergencyBookingStatus.REQUESTED)).thenReturn(4L);
+        when(emergencyBookingRepository.countByStatusIn(
+                EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED))).thenReturn(4L);
         when(appointmentBookingRepository.countByStatusScheduledBetween(AppointmentStatus.CONFIRMED, START, END))
                 .thenReturn(6L);
         when(appointmentBookingRepository.countByStatusScheduledBetween(AppointmentStatus.CANCELLED, START, END))
@@ -146,7 +153,8 @@ class HospitalMetricsServiceImplTest {
             when(emergencyBookingRepository.countByHospitalIdsStatusRequestedBetween(ids, status, START, END))
                     .thenReturn(status == EmergencyBookingStatus.COMPLETED ? 4L : 1L);
         }
-        when(emergencyBookingRepository.countByHospitalIdInAndStatus(ids, EmergencyBookingStatus.REQUESTED))
+        when(emergencyBookingRepository.countByHospitalIdInAndStatusIn(
+                ids, EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED)))
                 .thenReturn(3L);
         for (AppointmentStatus status : AppointmentStatus.values()) {
             when(appointmentBookingRepository.countByHospitalIdsStatusScheduledBetween(ids, status, START, END))
@@ -167,7 +175,8 @@ class HospitalMetricsServiceImplTest {
         assertThat(metrics.getDoctors().getTotal()).isEqualTo(6);
         assertThat(metrics.getDoctors().getActive()).isEqualTo(5);
         assertThat(metrics.getDoctors().getCheckedInNow()).isEqualTo(2);
-        assertThat(metrics.getEmergencyBookings().getTotal()).isEqualTo(6);
+        // 1 for each of the 4 other statuses + 4 COMPLETED
+        assertThat(metrics.getEmergencyBookings().getTotal()).isEqualTo(8);
         assertThat(metrics.getEmergencyBookings().getByStatus()).containsEntry(EmergencyBookingStatus.COMPLETED, 4L);
         assertThat(metrics.getEmergencyBookings().getOpenNow()).isEqualTo(3);
         assertThat(metrics.getAppointments().getTotal()).isEqualTo(7);
@@ -194,5 +203,50 @@ class HospitalMetricsServiceImplTest {
         assertThatThrownBy(() -> service.getDistrictMetrics("Chennai", TO, FROM))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(hospitalRepository);
+    }
+
+    @Test
+    void getHospitalMetrics_scopesCountsToThatHospital() {
+        Hospital h1 = Hospital.builder().id("h1").active(true)
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).build()).build();
+        Set<String> ids = Set.of("h1");
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(h1));
+        when(doctorRepository.countByHospitalAssociationsHospitalIdIn(ids)).thenReturn(3L);
+        when(doctorRepository.countByHospitalAssociationsHospitalIdInAndActiveTrue(ids)).thenReturn(2L);
+        when(doctorRepository.countByCurrentHospitalIdInAndActiveTrue(ids)).thenReturn(1L);
+        for (EmergencyBookingStatus status : EmergencyBookingStatus.values()) {
+            when(emergencyBookingRepository.countByHospitalIdsStatusRequestedBetween(ids, status, START, END))
+                    .thenReturn(status == EmergencyBookingStatus.REQUESTED ? 2L : 0L);
+        }
+        when(emergencyBookingRepository.countByHospitalIdInAndStatusIn(
+                ids, EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED)))
+                .thenReturn(2L);
+        for (AppointmentStatus status : AppointmentStatus.values()) {
+            when(appointmentBookingRepository.countByHospitalIdsStatusScheduledBetween(ids, status, START, END))
+                    .thenReturn(status == AppointmentStatus.CONFIRMED ? 5L : 0L);
+        }
+        when(appointmentBookingRepository.countByHospitalIdsStatusInScheduledFrom(
+                eq(ids), eq(EnumSet.of(AppointmentStatus.CONFIRMED, AppointmentStatus.RESCHEDULED)), any(Instant.class)))
+                .thenReturn(4L);
+
+        HospitalMetricsResponse metrics = service.getHospitalMetrics("h1", FROM, TO);
+
+        assertThat(metrics.getHospitalId()).isEqualTo("h1");
+        assertThat(metrics.getDistrict()).isNull();
+        assertThat(metrics.getHospitals().getTotal()).isEqualTo(1);
+        assertThat(metrics.getHospitals().getHandlingEmergencies()).isEqualTo(1);
+        assertThat(metrics.getDoctors().getCheckedInNow()).isEqualTo(1);
+        assertThat(metrics.getEmergencyBookings().getTotal()).isEqualTo(2);
+        assertThat(metrics.getEmergencyBookings().getOpenNow()).isEqualTo(2);
+        assertThat(metrics.getAppointments().getTotal()).isEqualTo(5);
+        assertThat(metrics.getAppointments().getUpcoming()).isEqualTo(4);
+    }
+
+    @Test
+    void getHospitalMetrics_unknownHospital_throwsNotFound() {
+        when(hospitalRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getHospitalMetrics("missing", FROM, TO))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

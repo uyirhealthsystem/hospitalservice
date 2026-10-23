@@ -6,6 +6,8 @@ import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.dto.PageResponse;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
+import com.uyir.hospital.security.CurrentUserContext;
+import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.HospitalService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -34,10 +36,13 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class HospitalController {
 
     private final HospitalService hospitalService;
+    private final CurrentUserContext currentUserContext;
 
+    // Only a HOSPITAL account may create a hospital; its X-User-Id is stored as the hospital's userId.
     @PostMapping
     public ResponseEntity<HospitalResponse> create(@Valid @RequestBody HospitalRequest request) {
-        HospitalResponse created = hospitalService.create(request);
+        String userId = currentUserContext.requireRole(Role.HOSPITAL);
+        HospitalResponse created = hospitalService.create(userId, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(created.getId())
@@ -48,6 +53,14 @@ public class HospitalController {
     @GetMapping("/{id}")
     public HospitalResponse getById(@PathVariable String id) {
         return hospitalService.getById(id);
+    }
+
+    // The logged-in HOSPITAL caller's own profile: resolved from X-User-Id (Hospital.userId), never a path/query
+    // param. 404 if that user hasn't created a hospital yet.
+    @GetMapping("/me")
+    public HospitalResponse getMyHospital() {
+        String userId = currentUserContext.requireRole(Role.HOSPITAL);
+        return hospitalService.getByUserId(userId);
     }
 
     @GetMapping

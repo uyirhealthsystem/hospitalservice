@@ -16,6 +16,7 @@ import com.uyir.hospital.dto.AnalyticsSnapshotRequest;
 import com.uyir.hospital.dto.AnalyticsSnapshotResponse;
 import com.uyir.hospital.dto.AnalyticsTrendPoint;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
+import com.uyir.hospital.dto.HospitalAnalyticsReport;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.security.CurrentUserContext;
@@ -217,6 +218,37 @@ class HospitalAnalyticsControllerTest {
     @Test
     void deleteSnapshot_missingSnapshotId_returns400() throws Exception {
         postJson("/snapshots/delete", "{\"district\":\"Chennai\"}").andExpect(status().isBadRequest());
+        verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    void myHospitalReport_usesCallersHospital() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(analyticsService.getHospitalReport("h1", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(HospitalAnalyticsReport.builder()
+                        .hospital(HospitalAnalyticsResponse.builder().hospitalId("h1").build())
+                        .trends(List.of())
+                        .build());
+
+        postJson("/my-hospital", "{\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hospital.hospitalId").value("h1"));
+    }
+
+    @Test
+    void myHospitalReport_noBody_passesNullDates() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(analyticsService.getHospitalReport(eq("h1"), isNull(), isNull())).thenReturn(new HospitalAnalyticsReport());
+
+        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isOk());
+    }
+
+    @Test
+    void myHospitalReport_notHospital_returns403() throws Exception {
+        when(currentUserContext.requireHospitalId())
+                .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
+
+        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isForbidden());
         verifyNoInteractions(analyticsService);
     }
 }

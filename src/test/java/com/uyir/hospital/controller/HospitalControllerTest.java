@@ -19,11 +19,14 @@ import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.dto.PageResponse;
 import com.uyir.hospital.exception.DuplicateResourceException;
+import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.model.embedded.Address;
 import com.uyir.hospital.model.embedded.ContactDetails;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
+import com.uyir.hospital.security.CurrentUserContext;
+import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.HospitalService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -47,6 +50,9 @@ class HospitalControllerTest {
 
     @MockitoBean
     private HospitalService hospitalService;
+
+    @MockitoBean
+    private CurrentUserContext currentUserContext;
 
     private HospitalRequest validRequest() {
         return HospitalRequest.builder()
@@ -75,13 +81,37 @@ class HospitalControllerTest {
 
     @Test
     void create_validRequest_returns201WithLocation() throws Exception {
-        when(hospitalService.create(any(HospitalRequest.class))).thenReturn(response("h1"));
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(hospitalService.create(eq("u1"), any(HospitalRequest.class))).thenReturn(response("h1"));
 
         mockMvc.perform(post("/api/v1/hospital")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("h1"));
+    }
+
+    @Test
+    void create_notHospitalRole_returns403() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL))
+                .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
+
+        mockMvc.perform(post("/api/v1/hospital")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void create_userAlreadyOwnsAHospital_returns409() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(hospitalService.create(eq("u1"), any(HospitalRequest.class)))
+                .thenThrow(new DuplicateResourceException("User 'u1' has already created a hospital"));
+
+        mockMvc.perform(post("/api/v1/hospital")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isConflict());
     }
 
     @Test
@@ -95,7 +125,8 @@ class HospitalControllerTest {
 
     @Test
     void create_duplicateRegistration_returns409() throws Exception {
-        when(hospitalService.create(any(HospitalRequest.class)))
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(hospitalService.create(eq("u1"), any(HospitalRequest.class)))
                 .thenThrow(new DuplicateResourceException("Hospital with registration number 'REG-123' already exists"));
 
         mockMvc.perform(post("/api/v1/hospital")
@@ -120,6 +151,37 @@ class HospitalControllerTest {
 
         mockMvc.perform(get("/api/v1/hospital/missing"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMyHospital_usesCallerUserId_returns200() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(hospitalService.getByUserId("u1")).thenReturn(response("h1"));
+
+        mockMvc.perform(get("/api/v1/hospital/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("h1"));
+
+        verify(hospitalService).getByUserId("u1");
+    }
+
+    @Test
+    void getMyHospital_noHospitalYet_returns404() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(hospitalService.getByUserId("u1"))
+                .thenThrow(new ResourceNotFoundException("No hospital found for user 'u1'"));
+
+        mockMvc.perform(get("/api/v1/hospital/me"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMyHospital_nonHospitalRole_returns403() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL))
+                .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
+
+        mockMvc.perform(get("/api/v1/hospital/me"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

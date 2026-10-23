@@ -56,9 +56,12 @@ Content-Type: application/json
     "email": "contact@apollochennai.example.com",
     "emergencyHotline": "+914428290911"
   },
+  "facilities": {
+    "specialtyDepartments": ["CAR001", "ORT001", "NEU001"]
+  },
   "emergencyServices": {
     "handlesEmergencies": true,
-    "specialtyEmergencyConditionsHandled": ["Cardiac Arrest", "Trauma", "Stroke"],
+    "specialtyEmergencyConditionsHandled": ["EMG001", "EMG010", "EMG002"],
     "ambulanceAvailable": true,
     "ambulanceTypes": ["NORMAL", "VENTILATOR"],
     "ambulance24x7Available": true
@@ -141,6 +144,7 @@ Content-Type: application/json
   "sex": "FEMALE",
   "tnmcNumber": "TN-CARD-1001",
   "specialties": ["Cardiology"],
+  "emergencyConditionsHandled": ["EMG001", "EMG002", "EMG010"],
   "yearsOfExperience": 15,
   "consultationFee": 800,
   "engagementType": "REGULAR",
@@ -167,6 +171,7 @@ Content-Type: application/json
   "sex": "FEMALE",
   "tnmcNumber": "TN-CARD-1001",
   "specialties": ["Cardiology"],
+  "emergencyConditionsHandled": ["EMG001", "EMG002", "EMG010"],
   "engagementType": "REGULAR",
   "contactDetails": { "phone": "+919840010001" },
   "hospitalAssociations": [
@@ -226,7 +231,7 @@ This is the most involved scenario because several conditions must line up
 before a hospital is shown as a valid option.
 
 ```
-GET {{baseUrl}}/api/v1/hospital/emergency-sos?emergencyType=Cardiac%20Arrest&longitude=80.27&latitude=13.08&radiusKm=10
+GET {{baseUrl}}/api/v1/hospital/emergency-sos?emergencyType=EMG001&longitude=80.27&latitude=13.08&radiusKm=10
 ```
 
 **A hospital only appears in the result if ALL of these are true:**
@@ -274,7 +279,7 @@ X-User-Role: PATIENT
 
 {
   "hospitalId": "68d5f1a2c9e1a2b3c4d5e601",
-  "emergencyType": "Cardiac Arrest",
+  "emergencyType": "EMG001",
   "patientName": "Suresh Kumar",
   "patientPhone": "9876543210"
 }

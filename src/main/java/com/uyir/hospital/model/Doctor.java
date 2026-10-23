@@ -38,6 +38,11 @@ public class Doctor {
 
     private List<String> qualifications;
     private List<String> specialties;
+
+    // Which of the 16 SOS emergency conditions this doctor handles (official names). A hospital is offered
+    // for an emergency only while a doctor handling it is checked in and seated there - see EmergencyCoverage.
+    private List<String> emergencyConditionsHandled;
+
     private Integer yearsOfExperience;
     private BigDecimal consultationFee;
 

@@ -1,13 +1,14 @@
 package com.uyir.hospital.service.impl;
 
+import com.uyir.hospital.catalog.EmergencyConditionCatalog;
 import com.uyir.hospital.dto.EmergencyHospitalSuggestion;
 import com.uyir.hospital.model.Doctor;
 import com.uyir.hospital.model.Hospital;
-import com.uyir.hospital.model.embedded.EmergencyServices;
-import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.service.EmergencyCoverage;
 import com.uyir.hospital.service.EmergencySosService;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.Metrics;
@@ -19,13 +20,16 @@ import org.springframework.stereotype.Service;
 public class EmergencySosServiceImpl implements EmergencySosService {
 
     private final HospitalRepository hospitalRepository;
-    private final DoctorRepository doctorRepository;
+    private final EmergencyConditionCatalog emergencyConditionCatalog;
+    private final EmergencyCoverage emergencyCoverage;
 
     @Override
     public List<EmergencyHospitalSuggestion> findAvailableHospitals(
             String emergencyType, double longitude, double latitude, double radiusKm) {
 
         GeoQuerySupport.validate(longitude, latitude, radiusKm);
+        // One of the 16 SOS emergency conditions (code or name) -> its official name; 400 otherwise.
+        String condition = emergencyConditionCatalog.requireName(emergencyType);
 
         Point point = new Point(longitude, latitude);
         Distance distance = new Distance(radiusKm, Metrics.KILOMETERS);
@@ -33,22 +37,18 @@ public class EmergencySosServiceImpl implements EmergencySosService {
         // findByAddressLocationNear compiles to a MongoDB $near query, which returns
         // results nearest-first - no separate distance sort/computation needed here.
         return hospitalRepository.findByAddressLocationNear(point, distance).stream()
-                .filter(Hospital::isActive)
-                .filter(hospital -> handlesEmergency(hospital, emergencyType))
-                .map(this::toSuggestion)
-                .filter(suggestion -> suggestion.getAvailableDoctorCount() > 0)
+                .filter(hospital -> emergencyCoverage.hospitalHandles(hospital, condition))
+                .map(hospital -> toSuggestion(hospital, emergencyCoverage.onDutyDoctorsHandling(hospital, condition)))
+                .filter(Objects::nonNull)
                 .toList();
     }
 
-    private boolean handlesEmergency(Hospital hospital, String emergencyType) {
-        EmergencyServices emergencyServices = hospital.getEmergencyServices();
-        return emergencyServices != null && emergencyServices.handlesEmergencyType(emergencyType);
-    }
-
-    private EmergencyHospitalSuggestion toSuggestion(Hospital hospital) {
-        List<Doctor> availableDoctors = doctorRepository.findByCurrentHospitalIdAndActiveTrue(hospital.getId());
-
-        List<String> availableSpecialties = availableDoctors.stream()
+    // null when no doctor on duty there handles the condition - the hospital is left out entirely.
+    private EmergencyHospitalSuggestion toSuggestion(Hospital hospital, List<Doctor> doctors) {
+        if (doctors.isEmpty()) {
+            return null;
+        }
+        List<String> availableSpecialties = doctors.stream()
                 .filter(doctor -> doctor.getSpecialties() != null)
                 .flatMap(doctor -> doctor.getSpecialties().stream())
                 .distinct()
@@ -59,7 +59,7 @@ public class EmergencySosServiceImpl implements EmergencySosService {
                 .hospitalName(hospital.getHospitalName())
                 .address(hospital.getAddress())
                 .contactDetails(hospital.getContactDetails())
-                .availableDoctorCount(availableDoctors.size())
+                .availableDoctorCount(doctors.size())
                 .availableSpecialties(availableSpecialties)
                 .build();
     }

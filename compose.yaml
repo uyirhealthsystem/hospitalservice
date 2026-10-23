@@ -1,0 +1,20 @@
+services:
+  hospital-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uyir-hospital-service
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_MONGODB_URI: ${SPRING_MONGODB_URI:?Set SPRING_MONGODB_URI in .env}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:?Set PAYMENT_SERVICE_URL in .env}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?Set PAYMENT_WEBHOOK_SECRET in .env}
+    networks:
+      - uyir-backend
+
+networks:
+  uyir-backend:
+    external: true
+    name: uyir-backend

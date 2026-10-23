@@ -19,8 +19,8 @@ public class EmergencyHospitalSuggestion {
     private Address address;
     private ContactDetails contactDetails;
 
-    // Doctors currently checked in at this hospital (Doctor.currentHospitalId) who are active.
-    // A suggestion only exists at all when this is > 0.
+    // Doctors on duty here right now (active, checked in, seated) who handle the requested emergency condition.
+    // A suggestion only exists at all when this is > 0. availableSpecialties: those doctors' specialties.
     private int availableDoctorCount;
     private List<String> availableSpecialties;
 }

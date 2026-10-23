@@ -22,6 +22,7 @@ import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.DoctorAppointmentBookingService;
+import com.uyir.hospital.service.HospitalSeatService;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
@@ -49,6 +50,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final DoctorRepository doctorRepository;
     private final DoctorAppointmentBookingMapper doctorAppointmentBookingMapper;
     private final AppointmentTokenGenerator appointmentTokenGenerator;
+    private final HospitalSeatService hospitalSeatService;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
@@ -70,6 +72,11 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         if (!associated) {
             throw new IllegalArgumentException(
                     "Doctor '" + request.getDoctorId() + "' is not associated with hospital '" + request.getHospitalId() + "'");
+        }
+        // Only the doctors a hospital has put in a seat take appointments there.
+        if (!hospitalSeatService.hasSeat(request.getHospitalId(), request.getDoctorId())) {
+            throw new IllegalArgumentException(
+                    "Doctor '" + request.getDoctorId() + "' does not hold a seat at hospital '" + request.getHospitalId() + "'");
         }
 
         BookedFor bookedFor = request.getBookedFor() != null ? request.getBookedFor() : BookedFor.SELF;

@@ -1,0 +1,193 @@
+[
+  { "category": "General Medicine", "specialties": [
+    { "code": "GEN001", "name": "General Physician" },
+    { "code": "GEN002", "name": "Family Medicine" },
+    { "code": "GEN003", "name": "Internal Medicine" },
+    { "code": "GEN004", "name": "Geriatric Medicine" }
+  ] },
+  { "category": "Women's Health", "specialties": [
+    { "code": "GYN001", "name": "Obstetrics & Gynaecology" },
+    { "code": "GYN002", "name": "Infertility Specialist" },
+    { "code": "GYN003", "name": "Reproductive Medicine" },
+    { "code": "GYN004", "name": "Maternal-Fetal Medicine" },
+    { "code": "GYN005", "name": "Menopause Specialist" }
+  ] },
+  { "category": "Child Health", "specialties": [
+    { "code": "PED001", "name": "Pediatrics" },
+    { "code": "PED002", "name": "Neonatology" },
+    { "code": "PED003", "name": "Pediatric Cardiology" },
+    { "code": "PED004", "name": "Pediatric Neurology" },
+    { "code": "PED005", "name": "Pediatric Surgery" },
+    { "code": "PED006", "name": "Pediatric Orthopedics" }
+  ] },
+  { "category": "Skin & Hair", "specialties": [
+    { "code": "DER001", "name": "Dermatology" },
+    { "code": "DER002", "name": "Cosmetology" },
+    { "code": "DER003", "name": "Trichology (Hair Specialist)" },
+    { "code": "DER004", "name": "Venereology" },
+    { "code": "DER005", "name": "Aesthetic Medicine" }
+  ] },
+  { "category": "Mental Health", "specialties": [
+    { "code": "PSY001", "name": "Psychiatry" },
+    { "code": "PSY002", "name": "Clinical Psychology" },
+    { "code": "PSY003", "name": "Neuropsychiatry" },
+    { "code": "PSY004", "name": "Addiction Psychiatry" },
+    { "code": "PSY005", "name": "Counselling Psychology" }
+  ] },
+  { "category": "Heart & Vascular", "specialties": [
+    { "code": "CAR001", "name": "Cardiology" },
+    { "code": "CAR002", "name": "Interventional Cardiology" },
+    { "code": "CAR003", "name": "Electrophysiology" },
+    { "code": "CAR004", "name": "Cardiothoracic Surgery" },
+    { "code": "CAR005", "name": "Vascular Surgery" }
+  ] },
+  { "category": "Brain & Nervous System", "specialties": [
+    { "code": "NEU001", "name": "Neurology" },
+    { "code": "NEU002", "name": "Neurosurgery" },
+    { "code": "NEU003", "name": "Stroke Specialist" },
+    { "code": "NEU004", "name": "Epileptology" },
+    { "code": "NEU005", "name": "Neuro Rehabilitation" }
+  ] },
+  { "category": "Bone & Joint", "specialties": [
+    { "code": "ORT001", "name": "Orthopedics" },
+    { "code": "ORT002", "name": "Joint Replacement" },
+    { "code": "ORT003", "name": "Sports Medicine" },
+    { "code": "ORT004", "name": "Spine Surgery" },
+    { "code": "ORT005", "name": "Hand Surgery" },
+    { "code": "ORT006", "name": "Trauma Specialist" }
+  ] },
+  { "category": "ENT", "specialties": [
+    { "code": "ENT001", "name": "ENT Specialist" },
+    { "code": "ENT002", "name": "Otology" },
+    { "code": "ENT003", "name": "Rhinology" },
+    { "code": "ENT004", "name": "Laryngology" },
+    { "code": "ENT005", "name": "Head & Neck Surgery" }
+  ] },
+  { "category": "Eye Care", "specialties": [
+    { "code": "OPH001", "name": "Ophthalmology" },
+    { "code": "OPH002", "name": "Retina Specialist" },
+    { "code": "OPH003", "name": "Cornea Specialist" },
+    { "code": "OPH004", "name": "Glaucoma Specialist" },
+    { "code": "OPH005", "name": "Pediatric Ophthalmology" },
+    { "code": "OPH006", "name": "Oculoplasty" }
+  ] },
+  { "category": "Dental Care", "specialties": [
+    { "code": "DEN001", "name": "General Dentistry" },
+    { "code": "DEN002", "name": "Orthodontics" },
+    { "code": "DEN003", "name": "Prosthodontics" },
+    { "code": "DEN004", "name": "Endodontics" },
+    { "code": "DEN005", "name": "Periodontics" },
+    { "code": "DEN006", "name": "Oral Surgery" },
+    { "code": "DEN007", "name": "Pedodontics" },
+    { "code": "DEN008", "name": "Implantology" }
+  ] },
+  { "category": "Digestive System", "specialties": [
+    { "code": "GAS001", "name": "Gastroenterology" },
+    { "code": "GAS002", "name": "Hepatology" },
+    { "code": "GAS003", "name": "GI Surgery" },
+    { "code": "GAS004", "name": "Colorectal Surgery" }
+  ] },
+  { "category": "Kidney & Urinary", "specialties": [
+    { "code": "NEP001", "name": "Nephrology" },
+    { "code": "NEP002", "name": "Urology" },
+    { "code": "NEP003", "name": "Renal Transplant Specialist" },
+    { "code": "NEP004", "name": "Uro-Oncology" }
+  ] },
+  { "category": "Lung & Respiratory", "specialties": [
+    { "code": "PUL001", "name": "Pulmonology" },
+    { "code": "PUL002", "name": "Sleep Medicine" },
+    { "code": "PUL003", "name": "Critical Care Medicine" },
+    { "code": "PUL004", "name": "Respiratory Medicine" }
+  ] },
+  { "category": "Endocrine & Diabetes", "specialties": [
+    { "code": "END001", "name": "Endocrinology" },
+    { "code": "END002", "name": "Diabetology" },
+    { "code": "END003", "name": "Thyroid Specialist" },
+    { "code": "END004", "name": "Metabolic Medicine" }
+  ] },
+  { "category": "Cancer Care", "specialties": [
+    { "code": "ONC001", "name": "Medical Oncology" },
+    { "code": "ONC002", "name": "Surgical Oncology" },
+    { "code": "ONC003", "name": "Radiation Oncology" },
+    { "code": "ONC004", "name": "Pediatric Oncology" },
+    { "code": "ONC005", "name": "Hemato-Oncology" }
+  ] },
+  { "category": "Surgery", "specialties": [
+    { "code": "SUR001", "name": "General Surgery" },
+    { "code": "SUR002", "name": "Laparoscopic Surgery" },
+    { "code": "SUR003", "name": "Bariatric Surgery" },
+    { "code": "SUR004", "name": "Trauma Surgery" },
+    { "code": "SUR005", "name": "Robotic Surgery" }
+  ] },
+  { "category": "Emergency & Critical Care", "specialties": [
+    { "code": "EMC001", "name": "Emergency Medicine" },
+    { "code": "EMC002", "name": "Critical Care" },
+    { "code": "EMC003", "name": "Trauma Medicine" },
+    { "code": "EMC004", "name": "Disaster Medicine" }
+  ] },
+  { "category": "Physical Medicine", "specialties": [
+    { "code": "PMR001", "name": "Physiotherapy" },
+    { "code": "PMR002", "name": "Physical Medicine & Rehabilitation" },
+    { "code": "PMR003", "name": "Sports Rehabilitation" },
+    { "code": "PMR004", "name": "Occupational Therapy" }
+  ] },
+  { "category": "Nutrition", "specialties": [
+    { "code": "NUT001", "name": "Dietitian" },
+    { "code": "NUT002", "name": "Nutritionist" },
+    { "code": "NUT003", "name": "Sports Nutritionist" },
+    { "code": "NUT004", "name": "Clinical Nutritionist" }
+  ] },
+  { "category": "Blood Disorders", "specialties": [
+    { "code": "HEM001", "name": "Hematology" },
+    { "code": "HEM002", "name": "Transfusion Medicine" },
+    { "code": "HEM003", "name": "Hemato-Oncology" }
+  ] },
+  { "category": "Infectious Diseases", "specialties": [
+    { "code": "INF001", "name": "Infectious Disease Specialist" },
+    { "code": "INF002", "name": "HIV Medicine" },
+    { "code": "INF003", "name": "Tropical Medicine" }
+  ] },
+  { "category": "Rheumatology & Autoimmune", "specialties": [
+    { "code": "RHE001", "name": "Rheumatology" },
+    { "code": "RHE002", "name": "Clinical Immunology" }
+  ] },
+  { "category": "Anaesthesia", "specialties": [
+    { "code": "ANA001", "name": "Anaesthesiology" },
+    { "code": "ANA002", "name": "Pain Medicine" },
+    { "code": "ANA003", "name": "Critical Care Anaesthesia" }
+  ] },
+  { "category": "Radiology & Imaging", "specialties": [
+    { "code": "RAD001", "name": "Radiology" },
+    { "code": "RAD002", "name": "Interventional Radiology" },
+    { "code": "RAD003", "name": "Nuclear Medicine" }
+  ] },
+  { "category": "Pathology & Laboratory", "specialties": [
+    { "code": "PAT001", "name": "Pathology" },
+    { "code": "PAT002", "name": "Microbiology" },
+    { "code": "PAT003", "name": "Biochemistry" },
+    { "code": "PAT004", "name": "Laboratory Medicine" }
+  ] },
+  { "category": "Alternative Medicine", "specialties": [
+    { "code": "ALT001", "name": "Ayurveda" },
+    { "code": "ALT002", "name": "Siddha" },
+    { "code": "ALT003", "name": "Homeopathy" },
+    { "code": "ALT004", "name": "Naturopathy" },
+    { "code": "ALT005", "name": "Unani" },
+    { "code": "ALT006", "name": "Yoga Therapy" }
+  ] },
+  { "category": "Sexual Health", "specialties": [
+    { "code": "SEX001", "name": "Sexology" },
+    { "code": "SEX002", "name": "Andrology" },
+    { "code": "SEX003", "name": "Reproductive Health" }
+  ] },
+  { "category": "Genetics", "specialties": [
+    { "code": "GENE001", "name": "Medical Genetics" },
+    { "code": "GENE002", "name": "Genetic Counselling" }
+  ] },
+  { "category": "Transplant Medicine", "specialties": [
+    { "code": "TRN001", "name": "Organ Transplant Specialist" },
+    { "code": "TRN002", "name": "Liver Transplant" },
+    { "code": "TRN003", "name": "Kidney Transplant" },
+    { "code": "TRN004", "name": "Heart Transplant" }
+  ] }
+]

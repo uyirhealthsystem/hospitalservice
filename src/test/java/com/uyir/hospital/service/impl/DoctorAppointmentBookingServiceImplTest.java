@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +33,7 @@ import com.uyir.hospital.model.enums.VisitType;
 import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
 import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.service.HospitalSeatService;
 import com.uyir.hospital.security.Role;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -58,6 +61,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private AppointmentTokenGenerator appointmentTokenGenerator;
 
+    @Mock
+    private HospitalSeatService hospitalSeatService;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -67,7 +73,10 @@ class DoctorAppointmentBookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
-                doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator);
+                doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator,
+                hospitalSeatService);
+        // Every doctor holds a seat unless a test says otherwise.
+        lenient().when(hospitalSeatService.hasSeat(anyString(), anyString())).thenReturn(true);
     }
 
     private DoctorAppointmentBookingRequest validRequest() {
@@ -329,6 +338,18 @@ class DoctorAppointmentBookingServiceImplTest {
         when(doctorRepository.findById("d1")).thenReturn(Optional.of(unassociatedDoctor));
 
         assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void create_doctorWithoutSeatAtHospital_throwsIllegalArgumentAndNeverSaves() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(hospitalSeatService.hasSeat("h1", "d1")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create("p1", validRequest()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does not hold a seat");
+        verify(doctorAppointmentBookingRepository, never()).save(any());
     }
 
     @Test

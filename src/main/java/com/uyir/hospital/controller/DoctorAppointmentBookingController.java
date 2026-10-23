@@ -48,7 +48,7 @@ public class DoctorAppointmentBookingController {
     // Hospital-only: the logged-in hospital's own appointment bookings.
     @GetMapping
     public List<DoctorAppointmentBookingResponse> getMyBookings() {
-        String hospitalId = currentUserContext.requireRole(Role.HOSPITAL);
+        String hospitalId = currentUserContext.requireHospitalId();
         return doctorAppointmentBookingService.getByHospitalId(hospitalId);
     }
 
@@ -63,7 +63,7 @@ public class DoctorAppointmentBookingController {
     @PatchMapping("/{id}/reschedule")
     public DoctorAppointmentBookingResponse reschedule(
             @PathVariable String id, @Valid @RequestBody RescheduleAppointmentRequest request) {
-        String hospitalId = currentUserContext.requireRole(Role.HOSPITAL);
+        String hospitalId = currentUserContext.requireHospitalId();
         return doctorAppointmentBookingService.reschedule(id, hospitalId, request);
     }
 
@@ -72,14 +72,18 @@ public class DoctorAppointmentBookingController {
     public DoctorAppointmentBookingResponse cancel(
             @PathVariable String id, @Valid @RequestBody CancelAppointmentRequest request) {
         String userId = currentUserContext.requireAnyRole(Role.PATIENT, Role.HOSPITAL);
-        return doctorAppointmentBookingService.cancel(id, userId, currentUserContext.getRole(), request);
+        Role role = currentUserContext.getRole();
+        if (role == Role.HOSPITAL) {
+            userId = currentUserContext.requireHospitalId();
+        }
+        return doctorAppointmentBookingService.cancel(id, userId, role, request);
     }
 
     // Hospital-only: closes out an appointment as COMPLETED or NO_SHOW once its time has come.
     @PatchMapping("/{id}/status")
     public DoctorAppointmentBookingResponse updateStatus(
             @PathVariable String id, @Valid @RequestBody UpdateAppointmentStatusRequest request) {
-        String hospitalId = currentUserContext.requireRole(Role.HOSPITAL);
+        String hospitalId = currentUserContext.requireHospitalId();
         return doctorAppointmentBookingService.updateStatus(id, hospitalId, request);
     }
 }

@@ -38,6 +38,21 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.FORBIDDEN, ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiError> handleConflict(ConflictException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(PaymentUnavailableException.class)
+    public ResponseEntity<ApiError> handlePaymentUnavailable(PaymentUnavailableException ex, HttpServletRequest request) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(WebhookRejectedException.class)
+    public ResponseEntity<ApiError> handleWebhookRejected(WebhookRejectedException ex, HttpServletRequest request) {
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<ApiError> handleDuplicateKey(DuplicateKeyException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, "A record with the given unique identifier already exists", request, null);

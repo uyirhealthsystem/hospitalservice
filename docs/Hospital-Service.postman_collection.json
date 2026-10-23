@@ -2,12 +2,13 @@
 	"info": {
 		"_postman_id": "6f3b2b3a-1a2b-4c3d-9e4f-uyirhospital01",
 		"name": "Hospital Service",
-		"description": "REST API for the Uyir hospital service. Every path is under the /api/v1/hospital prefix. Base URL defaults to http://localhost:8078 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalId}} (a hospital only ever sees/reschedules its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/v1/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.",
+		"description": "REST API for the Uyir hospital service. Every path is under the /api/v1/hospital prefix. Base URL defaults to http://localhost:8081 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" (as HOSPITAL user {{hospitalUserId}}) and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests. Each HOSPITAL user owns at most one hospital, so a second run returns 409 unless {{hospitalUserId}} and the registrationNumber change. Then seat the doctor (Doctor Seats › Get Seats → Assign Doctor to Seat): only seated doctors can be booked, show up in a hospital-filtered doctor search, or count for emergency-sos.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalUserId}} (the AuthService user that created the hospital; the service looks the hospital up by that userId) (a hospital only ever sees/reschedules/closes out its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/v1/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. A HOSPITAL caller can see only its own figures: \"Get My Hospital Metrics\" (POST /api/v1/hospital/metrics/my-hospital) and \"Get My Hospital Analytics\" (POST /api/v1/hospital/analytics/my-hospital), with X-User-Role: HOSPITAL and X-User-Id: {{hospitalUserId}}; the district endpoints stay admin-only. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.\n\nDoctor Seats: GET/PUT/DELETE seats and seat purchases act as HOSPITAL. Buying seats also sends Authorization: Bearer {{accessToken}}, forwarded to payment-service; for a real (Razorpay test mode) purchase {{accessToken}} must be an AuthService HOSPITAL token whose sub equals {{hospitalUserId}}. \"Payment Webhook - Simulate PAID (signed)\" signs its body with {{seatWebhookSecret}} (= the server's PAYMENT_WEBHOOK_SECRET) to complete a purchase without paying.\n\nPayout Account: PUT/GET /api/v1/hospital/payout-account act as HOSPITAL and register the bank account appointment payments are paid out to (Razorpay Route via payment-service); Authorization: Bearer {{accessToken}} is forwarded the same way as for seat purchases.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
-		{ "key": "baseUrl", "value": "http://localhost:8078", "type": "string" },
+		{ "key": "baseUrl", "value": "http://localhost:8081", "type": "string" },
 		{ "key": "hospitalId", "value": "", "type": "string" },
+		{ "key": "hospitalUserId", "value": "hospital-user-001", "type": "string" },
 		{ "key": "doctorId", "value": "", "type": "string" },
 		{ "key": "patientId", "value": "patient-001", "type": "string" },
 		{ "key": "emergencyBookingId", "value": "", "type": "string" },
@@ -15,9 +16,80 @@
 		{ "key": "adminId", "value": "admin-001", "type": "string" },
 		{ "key": "superAdminId", "value": "super-admin-001", "type": "string" },
 		{ "key": "district", "value": "Chennai", "type": "string" },
-		{ "key": "analyticsSnapshotId", "value": "", "type": "string" }
+		{ "key": "analyticsSnapshotId", "value": "", "type": "string" },
+		{ "key": "seatId", "value": "", "type": "string" },
+		{ "key": "seatPurchaseId", "value": "", "type": "string" },
+		{ "key": "seatPaymentId", "value": "", "type": "string" },
+		{ "key": "seatPurchaseAmount", "value": "", "type": "string" },
+		{ "key": "accessToken", "value": "", "type": "string" }
 	],
 	"item": [
+		{
+			"name": "Reference Data (Dropdowns)",
+			"description": "Public lists the forms are built from - no login or headers needed. Specialties (131, appointment booking & doctor search) and the 16 emergency conditions (emergency booking only) are separate lists. Send the code; the server stores the official name. See docs/UI-Form.md.",
+			"item": [
+				{
+					"name": "Get Specialties (Master List)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('30 categories, 131 specialties', () => {",
+									"    pm.expect(body).to.have.lengthOf(30);",
+									"    pm.expect(body.reduce((n, c) => n + c.specialties.length, 0)).to.eql(131);",
+									"});",
+									"pm.test('entries have code and name', () => pm.expect(body[0].specialties[0]).to.eql({ code: 'GEN001', name: 'General Physician' }));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/specialties",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "specialties" ]
+						},
+						"description": "Doctor `specialties` and hospital `facilities.specialtyDepartments` must come from this list (appointment booking & doctor search). Grouped by category. Send codes, e.g. [\"CAR001\"]; stored and returned as names. Unknown value -> 400."
+					}
+				},
+				{
+					"name": "Get Emergency Conditions (16 SOS choices)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('16 conditions in display order', () => {",
+									"    pm.expect(body).to.have.lengthOf(16);",
+									"    pm.expect(body[0]).to.eql({ code: 'EMG001', name: 'Chest Pain / Sweating / Palpitation', icon: '❤️' });",
+									"    pm.expect(body[15].name).to.eql('Other Emergency');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-conditions",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "emergency-conditions" ]
+						},
+						"description": "The patient's SOS choices (code goes in emergencyType). The hospital's emergencyServices.specialtyEmergencyConditionsHandled and each doctor's emergencyConditionsHandled use the same list. Emergency booking only - not linked to specialties."
+					}
+				}
+			]
+		},
 		{
 			"name": "Hospitals",
 			"item": [
@@ -33,6 +105,10 @@
 									"    const body = pm.response.json();",
 									"    pm.collectionVariables.set('hospitalId', body.id);",
 									"    pm.test('hospitalId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"    pm.test('owned by the calling user', () => pm.expect(body.userId).to.eql(pm.variables.get('hospitalUserId')));",
+									"} else {",
+									"    // 409: this hospitalUserId already created a hospital (one per user), or the registrationNumber is taken.",
+									"    pm.test('201 Created (409 = hospitalUserId already owns a hospital / registrationNumber taken)', () => pm.response.to.have.status(201));",
 									"}"
 								]
 							}
@@ -40,10 +116,80 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [ { "key": "Content-Type", "value": "application/json" } ],
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-User-Id", "value": "{{hospitalUserId}}" },
+							{ "key": "X-User-Role", "value": "HOSPITAL" }
+						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": { \"general\": 80, \"icu\": 12, \"nicu\": 6 },\n    \"specialtyDepartments\": [\"Cardiology\", \"Orthopedics\", \"Neurology\"],\n    \"diagnosticUnits\": { \"lab\": true, \"scanCentre\": true, \"pathology\": true },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\"Blood Bank\", \"Biochemistry\"],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\"Cardiac Arrest\", \"Stroke\", \"Trauma\"],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\"BLS\", \"VENTILATOR\"],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      { \"name\": \"R. Kumar\", \"mobileNumber\": \"+91-9876512345\", \"designation\": \"UDHS Coordinator\" },\n      { \"name\": \"S. Priya\", \"mobileNumber\": \"+91-9876512346\", \"designation\": \"UDHS Nodal Officer\" }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\"Star Health\", \"ICICI Lombard\"],\n    \"scansAvailable\": { \"usg\": true, \"xray\": true, \"ct\": true, \"mri\": false, \"other\": [\"Doppler\"] }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": true,\n    \"operationTheatreCount\": 4,\n    \"laserEquipmentAvailable\": true,\n    \"minimallyInvasiveEquipmentAvailable\": true,\n    \"postOpRecoveryRoomAvailable\": true,\n    \"endoscopyAvailable\": true,\n    \"laparoscopyUnitsAvailable\": false\n  }\n}",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": { \"general\": 80, \"icu\": 12, \"nicu\": 6 },\n    \"specialtyDepartments\": [\"Cardiology\", \"Orthopedics\", \"Neurology\"],\n    \"diagnosticUnits\": { \"lab\": true, \"scanCentre\": true, \"pathology\": true },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\"Blood Bank\", \"Biochemistry\"],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\"EMG001\", \"EMG002\", \"EMG010\"],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\"BLS\", \"VENTILATOR\"],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      { \"name\": \"R. Kumar\", \"mobileNumber\": \"+91-9876512345\", \"designation\": \"UDHS Coordinator\" },\n      { \"name\": \"S. Priya\", \"mobileNumber\": \"+91-9876512346\", \"designation\": \"UDHS Nodal Officer\" }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\"Star Health\", \"ICICI Lombard\"],\n    \"scansAvailable\": { \"usg\": true, \"xray\": true, \"ct\": true, \"mri\": false, \"other\": [\"Doppler\"] }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": true,\n    \"operationTheatreCount\": 4,\n    \"laserEquipmentAvailable\": true,\n    \"minimallyInvasiveEquipmentAvailable\": true,\n    \"postOpRecoveryRoomAvailable\": true,\n    \"endoscopyAvailable\": true,\n    \"laparoscopyUnitsAvailable\": false\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital" ]
+						},
+						"description": "HOSPITAL-only: the caller's X-User-Id ({{hospitalUserId}}, the AuthService user id) is stored as the hospital's userId, and every later HOSPITAL request resolves its hospital from that header. One hospital per user, and registrationNumber is unique — re-running returns 409, so change {{hospitalUserId}} and registrationNumber to create another. Also creates the hospital's FREE doctor seat. Captures {{hospitalId}}."
+					}
+				},
+				{
+					"name": "Create Second Hospital for Same User (expect 409)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-User-Id", "value": "{{hospitalUserId}}" },
+							{ "key": "X-User-Role", "value": "HOSPITAL" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-99999\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": { \"general\": 80, \"icu\": 12, \"nicu\": 6 },\n    \"specialtyDepartments\": [\"Cardiology\", \"Orthopedics\", \"Neurology\"],\n    \"diagnosticUnits\": { \"lab\": true, \"scanCentre\": true, \"pathology\": true },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\"Blood Bank\", \"Biochemistry\"],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\"EMG001\", \"EMG002\", \"EMG010\"],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\"BLS\", \"VENTILATOR\"],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      { \"name\": \"R. Kumar\", \"mobileNumber\": \"+91-9876512345\", \"designation\": \"UDHS Coordinator\" },\n      { \"name\": \"S. Priya\", \"mobileNumber\": \"+91-9876512346\", \"designation\": \"UDHS Nodal Officer\" }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\"Star Health\", \"ICICI Lombard\"],\n    \"scansAvailable\": { \"usg\": true, \"xray\": true, \"ct\": true, \"mri\": false, \"other\": [\"Doppler\"] }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": true,\n    \"operationTheatreCount\": 4,\n    \"laserEquipmentAvailable\": true,\n    \"minimallyInvasiveEquipmentAvailable\": true,\n    \"postOpRecoveryRoomAvailable\": true,\n    \"endoscopyAvailable\": true,\n    \"laparoscopyUnitsAvailable\": false\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital" ]
+						},
+						"description": "Same {{hospitalUserId}} as Create Hospital with a different registrationNumber — rejected because each user may own only one hospital."
+					}
+				},
+				{
+					"name": "Create Hospital as Patient (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-User-Id", "value": "{{patientId}}" },
+							{ "key": "X-User-Role", "value": "PATIENT" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": { \"general\": 80, \"icu\": 12, \"nicu\": 6 },\n    \"specialtyDepartments\": [\"Cardiology\", \"Orthopedics\", \"Neurology\"],\n    \"diagnosticUnits\": { \"lab\": true, \"scanCentre\": true, \"pathology\": true },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\"Blood Bank\", \"Biochemistry\"],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\"EMG001\", \"EMG002\", \"EMG010\"],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\"BLS\", \"VENTILATOR\"],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      { \"name\": \"R. Kumar\", \"mobileNumber\": \"+91-9876512345\", \"designation\": \"UDHS Coordinator\" },\n      { \"name\": \"S. Priya\", \"mobileNumber\": \"+91-9876512346\", \"designation\": \"UDHS Nodal Officer\" }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\"Star Health\", \"ICICI Lombard\"],\n    \"scansAvailable\": { \"usg\": true, \"xray\": true, \"ct\": true, \"mri\": false, \"other\": [\"Doppler\"] }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": true,\n    \"operationTheatreCount\": 4,\n    \"laserEquipmentAvailable\": true,\n    \"minimallyInvasiveEquipmentAvailable\": true,\n    \"postOpRecoveryRoomAvailable\": true,\n    \"endoscopyAvailable\": true,\n    \"laparoscopyUnitsAvailable\": false\n  }\n}",
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
@@ -107,16 +253,36 @@
 						"description": "All hospitals whose address.district matches (case-insensitive), full records sorted by name. Optional ?active=true|false; omit for both.",
 						"url": {
 							"raw": "{{baseUrl}}/api/v1/hospital/district/{{district}}",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"hospital",
-								"district",
-								"{{district}}"
-							]
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "district", "{{district}}" ]
+						}
+					}
+				},
+				{
+					"name": "Get My Hospital Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('hospital belongs to the user', () => pm.expect(pm.response.json().userId).to.eql(pm.variables.get('hospitalUserId')));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-User-Id", "value": "{{hospitalUserId}}" },
+							{ "key": "X-User-Role", "value": "HOSPITAL" }
+						],
+						"description": "The logged-in hospital's own profile, resolved from X-User-Id (Hospital.userId). Requires X-User-Role: HOSPITAL (403 otherwise); 404 if this user hasn't created a hospital yet.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/me",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "me" ]
 						}
 					}
 				},
@@ -144,9 +310,22 @@
 						"header": [ { "key": "Content-Type", "value": "application/json" } ],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": { \"type\": \"Point\", \"coordinates\": [80.2707, 13.0827] }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"email\": \"contact@uyirhospital.in\"\n  },\n  \"surgicalNetwork\": { \"joinedSurgicalNetwork\": false }\n}",
+							"raw": "{\n  \"hospitalName\": \"Uyir Multi-Speciality Hospital\",\n  \"registrationNumber\": \"REG-TN-2024-00123\",\n  \"ownershipType\": \"PRIVATE\",\n  \"hospitalType\": \"SUPER_SPECIALITY\",\n  \"address\": {\n    \"addressLine\": \"12, Anna Salai\",\n    \"city\": \"Chennai\",\n    \"district\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"country\": \"India\",\n    \"pincode\": \"600002\",\n    \"location\": {\n      \"type\": \"Point\",\n      \"coordinates\": [\n        80.2707,\n        13.0827\n      ]\n    }\n  },\n  \"contactDetails\": {\n    \"phone\": \"+91-9876543210\",\n    \"alternatePhone\": \"+91-9876543211\",\n    \"email\": \"contact@uyirhospital.in\",\n    \"emergencyHotline\": \"+91-9876500000\",\n    \"website\": \"https://uyirhospital.in\"\n  },\n  \"facilities\": {\n    \"bedCapacity\": {\n      \"general\": 80,\n      \"icu\": 12,\n      \"nicu\": 6\n    },\n    \"specialtyDepartments\": [\n      \"Cardiology\",\n      \"Orthopedics\",\n      \"Neurology\"\n    ],\n    \"diagnosticUnits\": {\n      \"lab\": true,\n      \"scanCentre\": true,\n      \"pathology\": true\n    },\n    \"labDetails\": {\n      \"labName\": \"Uyir Diagnostics\",\n      \"qualification\": \"NABL Accredited\",\n      \"facilities\": [\n        \"Blood Bank\",\n        \"Biochemistry\"\n      ],\n      \"scanCentreName\": \"Uyir Imaging Centre\",\n      \"pcpndtRegistrationNumber\": \"PCPNDT-TN-2024-0088\"\n    }\n  },\n  \"emergencyServices\": {\n    \"handlesEmergencies\": true,\n    \"specialtyEmergencyConditionsHandled\": [\n      \"Chest Pain / Sweating / Palpitation\",\n      \"Stroke / Paralysis / Sudden Weakness\",\n      \"Fall / Fracture\"\n    ],\n    \"ambulanceAvailable\": true,\n    \"ambulanceTypes\": [\n      \"BLS\",\n      \"VENTILATOR\"\n    ],\n    \"ambulance24x7Available\": true,\n    \"willingToAttachAmbulanceToUdhs\": true\n  },\n  \"staffDetails\": {\n    \"nursingStaffCount\": 45,\n    \"supportiveStaffCount\": 20,\n    \"udhsStaff\": [\n      {\n        \"name\": \"R. Kumar\",\n        \"mobileNumber\": \"+91-9876512345\",\n        \"designation\": \"UDHS Coordinator\"\n      },\n      {\n        \"name\": \"S. Priya\",\n        \"mobileNumber\": \"+91-9876512346\",\n        \"designation\": \"UDHS Nodal Officer\"\n      }\n    ]\n  },\n  \"operations\": {\n    \"hospitalInsured\": true,\n    \"dedicatedPharmacyAvailable\": true,\n    \"hospitalManagementSoftwareInUse\": true,\n    \"empanelledInsuranceCompanies\": [\n      \"Star Health\",\n      \"ICICI Lombard\"\n    ],\n    \"scansAvailable\": {\n      \"usg\": true,\n      \"xray\": true,\n      \"ct\": true,\n      \"mri\": false,\n      \"other\": [\n        \"Doppler\"\n      ]\n    }\n  },\n  \"surgicalNetwork\": {\n    \"joinedSurgicalNetwork\": false\n  }\n}",
 							"options": { "raw": { "language": "json" } }
 						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "{{hospitalId}}" ]
+						},
+						"description": "PUT replaces the whole record: send every section (facilities, emergencyServices, staffDetails, operations, …), or the ones left out are cleared — e.g. dropping emergencyServices makes the hospital reject every emergency booking."
+					}
+				},
+				{
+					"name": "Deactivate Hospital",
+					"request": {
+						"method": "DELETE",
+						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
 							"host": [ "{{baseUrl}}" ],
@@ -163,18 +342,6 @@
 							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}/activate",
 							"host": [ "{{baseUrl}}" ],
 							"path": [ "api", "v1", "hospital", "{{hospitalId}}", "activate" ]
-						}
-					}
-				},
-				{
-					"name": "Deactivate Hospital",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/v1/hospital/{{hospitalId}}",
-							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "v1", "hospital", "{{hospitalId}}" ]
 						}
 					}
 				},
@@ -223,7 +390,7 @@
 						"header": [ { "key": "Content-Type", "value": "application/json" } ],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"yearsOfExperience\": 15,\n  \"consultationFee\": 800,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 800, \"active\": true }\n  ]\n}",
+							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"emergencyConditionsHandled\": [\"EMG001\", \"EMG002\", \"EMG010\"],\n  \"yearsOfExperience\": 15,\n  \"consultationFee\": 800,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 800, \"active\": true }\n  ]\n}",
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": {
@@ -276,7 +443,8 @@
 								{ "key": "size", "value": "20" },
 								{ "key": "sort", "value": "name,asc" }
 							]
-						}
+						},
+						"description": "Body filters (all optional): specialty, hospitalId, engagementType, doctorCategory, active. With hospitalId set, only doctors holding one of that hospital's seats are returned (Doctor Seats › Assign Doctor to Seat)."
 					}
 				},
 				{
@@ -286,9 +454,21 @@
 						"header": [ { "key": "Content-Type", "value": "application/json" } ],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"yearsOfExperience\": 16,\n  \"consultationFee\": 900,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 900, \"active\": true }\n  ]\n}",
+							"raw": "{\n  \"name\": \"Dr. Anitha Raman\",\n  \"age\": 41,\n  \"sex\": \"FEMALE\",\n  \"tnmcNumber\": \"TNMC-2011-004521\",\n  \"qualifications\": [\"MBBS\", \"MD Cardiology\"],\n  \"specialties\": [\"Cardiology\"],\n  \"emergencyConditionsHandled\": [\"EMG001\", \"EMG002\", \"EMG010\"],\n  \"yearsOfExperience\": 16,\n  \"consultationFee\": 900,\n  \"availability\": { \"type\": \"CUSTOM_TIMINGS\", \"customTimings\": \"Mon-Fri 10am-1pm\" },\n  \"engagementType\": \"REGULAR\",\n  \"doctorCategory\": \"PRIMARY\",\n  \"contactDetails\": { \"phone\": \"+91-9876543212\", \"email\": \"anitha.raman@uyirhospital.in\" },\n  \"hospitalAssociations\": [\n    { \"hospitalId\": \"{{hospitalId}}\", \"department\": \"Cardiology\", \"consultationFee\": 900, \"active\": true }\n  ]\n}",
 							"options": { "raw": { "language": "json" } }
 						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}" ]
+						}
+					}
+				},
+				{
+					"name": "Deactivate Doctor",
+					"request": {
+						"method": "DELETE",
+						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
 							"host": [ "{{baseUrl}}" ],
@@ -305,18 +485,6 @@
 							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}/activate",
 							"host": [ "{{baseUrl}}" ],
 							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}", "activate" ]
-						}
-					}
-				},
-				{
-					"name": "Deactivate Doctor",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/v1/hospital/doctors/{{doctorId}}",
-							"host": [ "{{baseUrl}}" ],
-							"path": [ "api", "v1", "hospital", "doctors", "{{doctorId}}" ]
 						}
 					}
 				},
@@ -352,10 +520,830 @@
 			]
 		},
 		{
+			"name": "Doctor Seats",
+			"description": "Every hospital gets 1 FREE seat; each extra seat is a one-time purchase (hospital.seat.price-per-seat, ₹10,000) paid through payment-service (Razorpay). Only a doctor sitting in a seat is bookable for appointments and listed by emergency-sos.\n\nAll requests act as the hospital (X-User-Role: HOSPITAL, X-User-Id: {{hospitalUserId}}). The purchase requests also need Authorization: Bearer {{accessToken}}: hospitalservice forwards it to payment-service, which checks the token's sub equals the payer, so with SEAT_PAYMENT_PROVIDER=http {{hospitalUserId}} must be the sub of an AuthService HOSPITAL token. With SEAT_PAYMENT_PROVIDER=mock any token works and purchases are PAID at once.\n\nOrder: Get Seats (captures {{seatId}}) → Assign Doctor to Seat → Remove → Re-assign (leaves the doctor seated for the booking folders) → Buy Seats (captures {{seatPurchaseId}}, {{seatPaymentId}}, {{seatPurchaseAmount}}; the checkout URL is printed to the Postman console) → pay → Get Seats again.",
+			"item": [
+				{
+					"name": "Get Seats (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('has at least the free seat', () => pm.expect(body.totalSeats).to.be.at.least(1));",
+									"const seat = body.seats.find(s => !s.doctorId) || body.seats.find(s => s.seatType === 'FREE') || body.seats[0];",
+									"if (seat) pm.collectionVariables.set('seatId', seat.id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats"
+							]
+						},
+						"description": "Lists the hospital's seats (free + paid), who sits in each, the total/occupied/empty counts and the price per seat. Creates the free seat on the first call. Captures an empty seat (or the free one) as {{seatId}}."
+					}
+				},
+				{
+					"name": "Assign Doctor to Seat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('doctor seated', () => pm.expect(pm.response.json().doctorId).to.eql(pm.collectionVariables.get('doctorId')));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"doctorId\": \"{{doctorId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/{{seatId}}/doctor",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"{{seatId}}",
+								"doctor"
+							]
+						},
+						"description": "Puts {{doctorId}} in seat {{seatId}}, or swaps out the doctor sitting there. The doctor must be active and associated with this hospital. 409 if the outgoing doctor has upcoming CONFIRMED/RESCHEDULED appointments here."
+					}
+				},
+				{
+					"name": "Remove Doctor from Seat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('seat is empty', () => pm.expect(pm.response.json().doctorId).to.be.oneOf([null, undefined]));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/{{seatId}}/doctor",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"{{seatId}}",
+								"doctor"
+							]
+						},
+						"description": "Empties seat {{seatId}}. Same rule as a swap: 409 while the doctor has upcoming appointments at this hospital."
+					}
+				},
+				{
+					"name": "Re-assign Doctor to Seat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('doctor seated', () => pm.expect(pm.response.json().doctorId).to.eql(pm.collectionVariables.get('doctorId')));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"doctorId\": \"{{doctorId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/{{seatId}}/doctor",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"{{seatId}}",
+								"doctor"
+							]
+						},
+						"description": "Puts {{doctorId}} back in {{seatId}} after the removal above, so the doctor is bookable in the Doctor Appointment Bookings folder and counted by emergency-sos."
+					}
+				},
+				{
+					"name": "Buy Seats",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
+									"if (pm.response.code === 201 || pm.response.code === 200) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('seatPurchaseId', body.id);",
+									"    pm.collectionVariables.set('seatPaymentId', body.paymentId || '');",
+									"    pm.collectionVariables.set('seatPurchaseAmount', String(body.amount));",
+									"    pm.test('seatPurchaseId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"    pm.test('status is PENDING or PAID', () => pm.expect(body.status).to.be.oneOf(['PENDING', 'PAID']));",
+									"    if (body.checkoutUrl) console.log('Open to pay (Razorpay test mode):', body.checkoutUrl);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 1\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/purchases",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"purchases"
+							]
+						},
+						"description": "Starts a purchase of 1-50 seats. Returns 201 with status PENDING and a checkoutUrl (Razorpay payment link, valid 20 minutes); the seats are created when payment-service reports PAID. 503 if payment-service is unreachable."
+					}
+				},
+				{
+					"name": "Retry Seat Payment",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"if (pm.response.code === 201 || pm.response.code === 200) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('seatPurchaseId', body.id);",
+									"    pm.collectionVariables.set('seatPaymentId', body.paymentId || '');",
+									"    pm.collectionVariables.set('seatPurchaseAmount', String(body.amount));",
+									"    pm.test('seatPurchaseId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"    pm.test('status is PENDING or PAID', () => pm.expect(body.status).to.be.oneOf(['PENDING', 'PAID']));",
+									"    if (body.checkoutUrl) console.log('Open to pay (Razorpay test mode):', body.checkoutUrl);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/purchases/{{seatPurchaseId}}/payment",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"purchases",
+								"{{seatPurchaseId}}",
+								"payment"
+							]
+						},
+						"description": "New checkout link for an unpaid (PENDING or FAILED) purchase, e.g. after the 20-minute link expired."
+					}
+				},
+				{
+					"name": "List Seat Purchases",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('is an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/purchases",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"purchases"
+							]
+						},
+						"description": "The hospital's purchase history, newest first."
+					}
+				},
+				{
+					"name": "Buy Seats with quantity 0 (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 0\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/purchases",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"purchases"
+							]
+						},
+						"description": "Validation: quantity must be 1-50."
+					}
+				},
+				{
+					"name": "Get Seats as Patient (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats"
+							]
+						},
+						"description": "Seat endpoints are HOSPITAL-only."
+					}
+				},
+				{
+					"name": "Get Seats for User Without Hospital (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "user-without-hospital"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats"
+							]
+						},
+						"description": "A HOSPITAL caller that hasn't created a hospital yet gets 403 (\"No hospital is registered for user …\") on every hospital-scoped endpoint."
+					}
+				},
+				{
+					"name": "Payment Webhook - Simulate PAID (signed)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Signs the body the way payment-service does: hex(HMAC-SHA256(secret, timestamp + '.' + rawBody)).",
+									"// {{seatWebhookSecret}} must equal hospitalservice's PAYMENT_WEBHOOK_SECRET.",
+									"const secret = pm.variables.get('seatWebhookSecret');",
+									"if (!secret) throw new Error('Set seatWebhookSecret in the environment (= PAYMENT_WEBHOOK_SECRET)');",
+									"const ts = Math.floor(Date.now() / 1000).toString();",
+									"const raw = pm.variables.replaceIn(pm.request.body.raw);",
+									"pm.request.body.raw = raw;",
+									"const sig = CryptoJS.HmacSHA256(ts + '.' + raw, secret).toString(CryptoJS.enc.Hex);",
+									"pm.request.headers.upsert({ key: 'X-Payment-Timestamp', value: ts });",
+									"pm.request.headers.upsert({ key: 'X-Payment-Signature', value: sig });"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('acknowledged', () => pm.expect(pm.response.json().ok).to.eql(true));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentId\": \"{{seatPaymentId}}\",\n  \"referenceType\": \"HOSPITAL_SEAT\",\n  \"referenceId\": \"{{seatPurchaseId}}\",\n  \"status\": \"PAID\",\n  \"amount\": {{seatPurchaseAmount}},\n  \"currency\": \"INR\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/payments/webhook",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"payments",
+								"webhook"
+							]
+						},
+						"description": "Called by payment-service only, never by apps. No user token: authenticated by X-Payment-Timestamp / X-Payment-Signature (HMAC-SHA256, 5-minute window), which the pre-request script computes from {{seatWebhookSecret}}. Use it to finish a purchase locally without paying (run Buy Seats first). Idempotent: sending it twice creates the seats once. 401 on a bad/expired signature, 503 if PAYMENT_WEBHOOK_SECRET is not set on the server."
+					}
+				}
+			]
+		},
+		{
+			"name": "Payout Account",
+			"description": "The bank account patients' appointment payments are paid out to (Razorpay Route). Hospital-only: every request acts as the hospital (X-User-Role: HOSPITAL, X-User-Id: {{hospitalUserId}}) and resolves its hospital from that user, so run Hospitals › Create Hospital first.\n\nhospitalservice forwards Authorization: Bearer {{accessToken}} to payment-service (PUT /api/payments/linked-accounts, POST /api/payments/linked-accounts/{id}/refresh). With the http payout client {{accessToken}} must be an AuthService HOSPITAL token whose sub equals {{hospitalUserId}}; with the mock client any token works.\n\nStatus goes PENDING_DETAILS → UNDER_REVIEW → ACTIVATED (or NEEDS_CLARIFICATION, with `requirements` listing what to fix - PUT the full details again). Payouts are enabled only once ACTIVATED. Only the last 4 digits of the account number are ever returned.\n\nOrder: Set Up Payout Account → Get Payout Account.",
+			"item": [
+				{
+					"name": "Set Up Payout Account",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"if (pm.response.code === 200) {",
+									"    const body = pm.response.json();",
+									"    pm.test('belongs to this hospital', () => pm.expect(body.hospitalId).to.eql(pm.collectionVariables.get('hospitalId')));",
+									"    pm.test('known status', () => pm.expect(body.status).to.be.oneOf(['PENDING_DETAILS', 'UNDER_REVIEW', 'NEEDS_CLARIFICATION', 'ACTIVATED', 'SUSPENDED']));",
+									"    pm.test('account number is masked', () => pm.expect(body.bankAccountLast4).to.eql('6789'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"legalBusinessName\": \"Sunrise Multispeciality Hospital Pvt Ltd\",\n  \"businessType\": \"private_limited\",\n  \"contactName\": \"Priya Raman\",\n  \"email\": \"accounts@sunrisehospital.example\",\n  \"phone\": \"9876543210\",\n  \"address\": {\n    \"street1\": \"12 Anna Salai\",\n    \"street2\": \"Teynampet\",\n    \"city\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"postalCode\": \"600018\"\n  },\n  \"pan\": \"AAACS1234C\",\n  \"gst\": \"33AAACS1234C1Z5\",\n  \"stakeholder\": {\n    \"name\": \"Priya Raman\",\n    \"email\": \"priya.raman@sunrisehospital.example\",\n    \"phone\": \"9876543210\",\n    \"pan\": \"ABCPK1234D\"\n  },\n  \"bankAccount\": {\n    \"accountNumber\": \"50100123456789\",\n    \"ifscCode\": \"HDFC0000317\",\n    \"beneficiaryName\": \"Sunrise Multispeciality Hospital Pvt Ltd\"\n  },\n  \"tncAccepted\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/payout-account",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"payout-account"
+							]
+						},
+						"description": "Sets up, continues (after NEEDS_CLARIFICATION or a failed attempt) or changes the hospital's payout bank account. Send the full details every time: steps already done at Razorpay are skipped, and once the Razorpay account exists only bankAccount can still change.\n\n- `businessType`: individual, proprietorship, partnership, private_limited, public_limited, llp, ngo, trust, society, not_yet_registered, educational_institutes.\n- `pan` is the business PAN, `stakeholder.pan` the signatory's personal PAN; `gst` is optional.\n- `tncAccepted` must be true (Razorpay Route terms).\n\n**200** the account and its status, **400** validation error, **403** caller is not a HOSPITAL with a hospital, **404** hospital not found, **503** payment-service unreachable."
+					}
+				},
+				{
+					"name": "Get Payout Account",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"if (pm.response.code === 200) {",
+									"    const body = pm.response.json();",
+									"    pm.test('known status', () => pm.expect(body.status).to.be.oneOf(['PENDING_DETAILS', 'UNDER_REVIEW', 'NEEDS_CLARIFICATION', 'ACTIVATED', 'SUSPENDED']));",
+									"    pm.test('payoutsEnabled matches status', () => pm.expect(body.payoutsEnabled).to.eql(body.status === 'ACTIVATED'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/payout-account",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"payout-account"
+							]
+						},
+						"description": "The hospital's payout account. Until it is ACTIVATED the status is refreshed from payment-service (Razorpay) on every call; if payment-service is down the last known status is returned. **404** before Set Up Payout Account has run."
+					}
+				},
+				{
+					"name": "Set Up Payout Account without accepting terms (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"legalBusinessName\": \"Sunrise Multispeciality Hospital Pvt Ltd\",\n  \"businessType\": \"private_limited\",\n  \"contactName\": \"Priya Raman\",\n  \"email\": \"accounts@sunrisehospital.example\",\n  \"phone\": \"9876543210\",\n  \"address\": {\n    \"street1\": \"12 Anna Salai\",\n    \"street2\": \"Teynampet\",\n    \"city\": \"Chennai\",\n    \"state\": \"Tamil Nadu\",\n    \"postalCode\": \"600018\"\n  },\n  \"pan\": \"AAACS1234C\",\n  \"gst\": \"33AAACS1234C1Z5\",\n  \"stakeholder\": {\n    \"name\": \"Priya Raman\",\n    \"email\": \"priya.raman@sunrisehospital.example\",\n    \"phone\": \"9876543210\",\n    \"pan\": \"ABCPK1234D\"\n  },\n  \"bankAccount\": {\n    \"accountNumber\": \"50100123456789\",\n    \"ifscCode\": \"hdfc317\",\n    \"beneficiaryName\": \"Sunrise Multispeciality Hospital Pvt Ltd\"\n  },\n  \"tncAccepted\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/payout-account",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"payout-account"
+							]
+						},
+						"description": "tncAccepted false and a malformed IFSC - rejected by validation before anything is sent to payment-service."
+					}
+				},
+				{
+					"name": "Get Payout Account as Patient (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/payout-account",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"payout-account"
+							]
+						},
+						"description": "Payout accounts are hospital-only."
+					}
+				}
+			]
+		},
+		{
 			"name": "Emergency SOS",
 			"item": [
 				{
 					"name": "Find Hospitals for Emergency",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-sos?emergencyType=EMG001&longitude=80.27&latitude=13.08&radiusKm=10",
+							"host": [ "{{baseUrl}}" ],
+							"path": [ "api", "v1", "hospital", "emergency-sos" ],
+							"query": [
+								{ "key": "emergencyType", "value": "EMG001" },
+								{ "key": "longitude", "value": "80.27" },
+								{ "key": "latitude", "value": "13.08" },
+								{ "key": "radiusKm", "value": "10" }
+							]
+						},
+						"description": "A hospital is returned only if: it is active and handles emergencies, it chose this condition, and a doctor who also chose it (Doctors -> emergencyConditionsHandled) is on duty there now - active, checked in (Doctors -> Check In Doctor) and holding one of its seats. Emergency booking re-checks the same rules (409 if no matching doctor is on duty)."
+					}
+				},
+				{
+					"name": "Find Hospitals - Unknown Emergency Type (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+									"pm.test('message points at the condition list', () => pm.expect(pm.response.json().message).to.include('emergency-conditions'));"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [],
@@ -369,13 +1357,15 @@
 								{ "key": "latitude", "value": "13.08" },
 								{ "key": "radiusKm", "value": "10" }
 							]
-						}
+						},
+						"description": "emergencyType must be one of the 16 conditions (code or exact name). Free text like 'Cardiac Arrest' is rejected."
 					}
 				}
 			]
 		},
 		{
 			"name": "Emergency Bookings",
+			"description": "Patient requests, hospital responds. Lifecycle: REQUESTED → accept → ACCEPTED → complete → COMPLETED; REQUESTED → reject (reason) → REJECTED; REQUESTED / ACCEPTED → cancel (patient, reason) → CANCELLED. REJECTED, CANCELLED and COMPLETED are final (further changes → 409). accept / reject / complete are HOSPITAL-only ({{hospitalUserId}}, scoped to the hospital that user created); cancel is PATIENT-only and only for the patient’s own booking.\n\nThe hospital must handle the emergencyType (emergencyServices.specialtyEmergencyConditionsHandled) or Create returns 400. Each path below creates its own booking and overwrites {{emergencyBookingId}}.",
 			"item": [
 				{
 					"name": "Create Emergency Booking (Patient)",
@@ -385,6 +1375,7 @@
 							"script": {
 								"type": "text/javascript",
 								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
 									"if (pm.response.code === 201) {",
 									"    const body = pm.response.json();",
 									"    pm.collectionVariables.set('emergencyBookingId', body.id);",
@@ -412,7 +1403,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"emergencyType\": \"Cardiac Arrest\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"emergencyType\": \"Chest Pain / Sweating / Palpitation\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -435,12 +1426,24 @@
 				},
 				{
 					"name": "Get My Emergency Bookings (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('includes the new booking', () => pm.expect(pm.response.json().map(b => b.id)).to.include(pm.collectionVariables.get('emergencyBookingId')));"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
 							{
 								"key": "X-User-Id",
-								"value": "{{hospitalId}}"
+								"value": "{{hospitalUserId}}"
 							},
 							{
 								"key": "X-User-Role",
@@ -462,7 +1465,474 @@
 					}
 				},
 				{
+					"name": "Accept Emergency Booking (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('booking is ACCEPTED', () => pm.expect(pm.response.json().status).to.eql('ACCEPTED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "Hospital takes the emergency on: REQUESTED -> ACCEPTED (sets acceptedAt). Only the hospital the booking was made to (resolved from X-User-Id). 409 if the booking is no longer REQUESTED.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/accept",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"accept"
+							]
+						}
+					}
+				},
+				{
+					"name": "Complete Emergency Booking (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('booking is COMPLETED', () => pm.expect(pm.response.json().status).to.eql('COMPLETED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "Hospital closes out an accepted emergency: ACCEPTED -> COMPLETED (sets completedAt). 409 unless the booking is ACCEPTED. Run Accept first.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/complete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"complete"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Emergency Booking to Reject (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('emergencyBookingId', body.id);",
+									"    pm.test('emergencyBookingId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"emergencyType\": \"Chest Pain / Sweating / Palpitation\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "A fresh REQUESTED booking for the reject path (the first one is COMPLETED by now). Overwrites {{emergencyBookingId}}.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings"
+							]
+						}
+					}
+				},
+				{
+					"name": "Reject Emergency Booking (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('booking is REJECTED', () => pm.expect(pm.response.json().status).to.eql('REJECTED'));",
+									"pm.test('reason recorded', () => pm.expect(pm.response.json().rejectionReason).to.eql('No ICU bed available right now'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "Hospital turns the emergency down with a reason: REQUESTED -> REJECTED (sets rejectedAt, rejectionReason). reason is required (max 500). 409 unless the booking is REQUESTED - run Create Emergency Booking again first if you already accepted it.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"No ICU bed available right now\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/reject",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"reject"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Emergency Booking to Cancel (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('emergencyBookingId', body.id);",
+									"    pm.test('emergencyBookingId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"emergencyType\": \"Chest Pain / Sweating / Palpitation\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "A fresh REQUESTED booking for the cancel path. Overwrites {{emergencyBookingId}}.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings"
+							]
+						}
+					}
+				},
+				{
+					"name": "Cancel Emergency Booking (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('booking is CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));",
+									"pm.test('reason recorded', () => pm.expect(pm.response.json().cancellationReason).to.eql('Went to a closer hospital'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"description": "Patient withdraws their own request with a reason: REQUESTED or ACCEPTED -> CANCELLED (sets cancelledAt, cancellationReason). reason is required (max 500). 409 once the booking is REJECTED, CANCELLED or COMPLETED.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Went to a closer hospital\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"cancel"
+							]
+						}
+					}
+				},
+				{
+					"name": "Accept Cancelled Emergency Booking (expect 409)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "CANCELLED, REJECTED and COMPLETED are final - any further transition is a 409.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/accept",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"accept"
+							]
+						}
+					}
+				},
+				{
+					"name": "Reject Emergency Booking without Reason (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "reason is required (max 500 chars) for reject and cancel.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/reject",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"reject"
+							]
+						}
+					}
+				},
+				{
+					"name": "Accept Emergency Booking as Patient (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"description": "accept / reject / complete are HOSPITAL-only; cancel is PATIENT-only.",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/emergency-bookings/{{emergencyBookingId}}/accept",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"emergency-bookings",
+								"{{emergencyBookingId}}",
+								"accept"
+							]
+						}
+					}
+				},
+				{
 					"name": "Get My Emergency Booking History (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"pm.test('every booking is the patient\\'s', () => pm.response.json().forEach(b => pm.expect(b.patientId).to.eql(pm.variables.get('patientId'))));"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -494,6 +1964,7 @@
 		},
 		{
 			"name": "Doctor Appointment Bookings",
+			"description": "Patient books, hospital manages. X-User-Id / X-User-Role come from the gateway in production.\n\nOrder: Create (captures {{appointmentBookingId}}) → lists → Reschedule (hospital) → Update Status (hospital; only after the scheduled time) → Cancel (patient or hospital).\n\nPrerequisite: the doctor must hold a seat at the hospital — run Doctor Seats › Get Seats and Assign Doctor to Seat first, otherwise Create returns 400.",
 			"item": [
 				{
 					"name": "Create Appointment Booking (Patient)",
@@ -503,10 +1974,13 @@
 							"script": {
 								"type": "text/javascript",
 								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
 									"if (pm.response.code === 201) {",
 									"    const body = pm.response.json();",
 									"    pm.collectionVariables.set('appointmentBookingId', body.id);",
 									"    pm.test('appointmentBookingId captured', () => pm.expect(body.id).to.be.a('string'));",
+									"    pm.test('token number assigned', () => pm.expect(body.tokenNumber).to.be.a('number'));",
+									"    pm.test('status CONFIRMED', () => pm.expect(body.status).to.eql('CONFIRMED'));",
 									"}"
 								]
 							}
@@ -530,7 +2004,114 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T10:00:00Z\",\n  \"reason\": \"Routine checkup\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\"\n}",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T10:00:00Z\",\n  \"durationMinutes\": 15,\n  \"consultationType\": \"IN_PERSON\",\n  \"visitType\": \"NEW\",\n  \"reason\": \"Routine checkup\",\n  \"symptoms\": [\n    \"Chest pain\",\n    \"Shortness of breath\"\n  ],\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\",\n  \"bookedFor\": \"SELF\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"doctor-appointments"
+							]
+						},
+						"description": "Books an appointment as the patient. Required: hospitalId, doctorId, appointmentDateTime (future), patientName, patientPhone, patientAge (0-130), patientGender (MALE | FEMALE | OTHER). Optional: durationMinutes (5-120), consultationType (IN_PERSON default | TELECONSULT), visitType (NEW default | FOLLOW_UP + previousAppointmentId), reason, symptoms (≤20), bookedFor (SELF default | FAMILY_MEMBER + relationship).\n\nThe doctor must be active, associated with the hospital and sitting in one of its seats (Doctor Seats › Assign Doctor to Seat), and the slot must be free. The response carries tokenNumber — the doctor's queue number for that day. Captures {{appointmentBookingId}}."
+					}
+				},
+				{
+					"name": "Create Appointment Booking for Family Member (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', () => pm.response.to.have.status(201));",
+									"pm.test('booked for family member', () => pm.expect(pm.response.json().bookedFor).to.eql('FAMILY_MEMBER'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T11:00:00Z\",\n  \"consultationType\": \"IN_PERSON\",\n  \"visitType\": \"NEW\",\n  \"reason\": \"Fever for three days\",\n  \"symptoms\": [\n    \"Fever\"\n  ],\n  \"patientName\": \"Lakshmi Kumar\",\n  \"patientPhone\": \"+91-9876543220\",\n  \"patientAge\": 72,\n  \"patientGender\": \"FEMALE\",\n  \"bookedFor\": \"FAMILY_MEMBER\",\n  \"relationship\": \"PARENT\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"doctor-appointments"
+							]
+						},
+						"description": "The logged-in patient books on behalf of a family member. bookedFor: FAMILY_MEMBER requires relationship (SPOUSE | PARENT | CHILD | SIBLING | GRANDPARENT | GRANDCHILD | OTHER); the patient* fields describe the family member."
+					}
+				},
+				{
+					"name": "Create Appointment without Patient Age (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T12:00:00Z\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientGender\": \"MALE\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -558,7 +2139,7 @@
 						"header": [
 							{
 								"key": "X-User-Id",
-								"value": "{{hospitalId}}"
+								"value": "{{hospitalUserId}}"
 							},
 							{
 								"key": "X-User-Role",
@@ -619,7 +2200,7 @@
 							},
 							{
 								"key": "X-User-Id",
-								"value": "{{hospitalId}}"
+								"value": "{{hospitalUserId}}"
 							},
 							{
 								"key": "X-User-Role",
@@ -649,6 +2230,215 @@
 								"reschedule"
 							]
 						}
+					}
+				},
+				{
+					"name": "Update Appointment Status (Hospital)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// 400 until the appointment's scheduled time has passed.",
+									"pm.test('200 OK or 400 before scheduled time', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+									"if (pm.response.code === 200) pm.test('status updated', () => pm.expect(pm.response.json().status).to.eql('COMPLETED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"COMPLETED\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"doctor-appointments",
+								"{{appointmentBookingId}}",
+								"status"
+							]
+						},
+						"description": "Hospital-only: closes out a CONFIRMED / RESCHEDULED appointment as COMPLETED or NO_SHOW. Rejected with 400 before the appointment's scheduled time, so against the sample future booking this returns 400."
+					}
+				},
+				{
+					"name": "Cancel Appointment Booking (Patient)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', () => pm.response.to.have.status(200));",
+									"pm.test('status CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{patientId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "PATIENT"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Feeling better, no longer need the visit\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"doctor-appointments",
+								"{{appointmentBookingId}}",
+								"cancel"
+							]
+						},
+						"description": "Patient or hospital can cancel its own CONFIRMED / RESCHEDULED appointment; reason is required (≤500 chars). To cancel as the hospital, send X-User-Role: HOSPITAL with X-User-Id: {{hospitalUserId}} (the AuthService user that created the hospital; the service looks the hospital up by that userId). Run last — a cancelled booking can't be rescheduled or closed out."
+					}
+				},
+				{
+					"name": "Cancel Already Cancelled Appointment (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Doctor unavailable\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"doctor-appointments",
+								"{{appointmentBookingId}}",
+								"cancel"
+							]
+						}
+					}
+				},
+				{
+					"name": "Remove Seated Doctor with Upcoming Appointments (expect 409)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/seats/{{seatId}}/doctor",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"seats",
+								"{{seatId}}",
+								"doctor"
+							]
+						},
+						"description": "The family-member booking above is still CONFIRMED and in the future, so freeing the doctor's seat is refused until it is cancelled or completed."
 					}
 				}
 			]
@@ -765,6 +2555,161 @@
 					}
 				},
 				{
+					"name": "Get My Hospital Metrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('scoped to my hospital', () => pm.expect(body.hospitalId).to.eql(pm.variables.get('hospitalId')));",
+									"pm.test('has the metric sections', () => pm.expect(body).to.include.keys('doctors', 'emergencyBookings', 'appointments'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "HOSPITAL only. The same counts as the district metrics, for the caller's own hospital - resolved from X-User-Id (the AuthService user that created it). Body optional; omit for the last 30 days. Returns 403 if the user has no hospital.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"metrics",
+								"my-hospital"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Hospital Metrics - No Body (last 30 days)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('scoped to my hospital', () => pm.expect(body.hospitalId).to.eql(pm.variables.get('hospitalId')));",
+									"pm.test('defaults to the last 30 days', () => pm.expect((new Date(body.toDate) - new Date(body.fromDate)) / 864e5).to.eql(29));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "No body: the range defaults to the last 30 days ending today (IST).",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"metrics",
+								"my-hospital"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Hospital Metrics as Admin (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{adminId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							}
+						],
+						"description": "my-hospital is HOSPITAL-only; admins use the service-wide / district metrics.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/metrics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"metrics",
+								"my-hospital"
+							]
+						}
+					}
+				},
+				{
 					"name": "Get All District Metrics",
 					"event": [
 						{
@@ -875,7 +2820,7 @@
 						"header": [
 							{
 								"key": "X-User-Id",
-								"value": "{{hospitalId}}"
+								"value": "{{hospitalUserId}}"
 							},
 							{
 								"key": "X-User-Role",
@@ -904,6 +2849,171 @@
 			"name": "Hospital Analytics",
 			"description": "District-level analytics. Called by the Admin service on behalf of an admin - this service doesn't look admins up.\n\n- Every endpoint is POST with a JSON body. For everything in one GET, see \"Get All District Metrics\" in Hospital Metrics.\n- Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id = the admin's id.\n- district is required in every body. The Admin service decides which district an admin may see; this service trusts it.\n- Hospitals belong to a district via address.district (case-insensitive).",
 			"item": [
+				{
+					"name": "Get My Hospital Analytics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('status is 200', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('scoped to my hospital', () => pm.expect(body.hospital.hospitalId).to.eql(pm.variables.get('hospitalId')));",
+									"pm.test('one trend point per day', () => pm.expect(body.trends).to.have.lengthOf(30));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "HOSPITAL only. The caller's own hospital figures (beds, doctors, bookings by status) plus daily trends. Hospital resolved from X-User-Id; no district in the body. Body optional; omit for the last 30 days.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"analytics",
+								"my-hospital"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Hospital Analytics with fromDate after toDate (expect 400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{hospitalUserId}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "fromDate must be on or before toDate, and the range may not exceed 366 days.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fromDate\": \"2026-09-30\",\n  \"toDate\": \"2026-09-01\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"analytics",
+								"my-hospital"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Hospital Analytics for User Without Hospital (expect 403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "user-without-hospital"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "HOSPITAL"
+							}
+						],
+						"description": "A HOSPITAL user that hasn't created a hospital gets 403 (\"No hospital is registered for user …\").",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/hospital/analytics/my-hospital",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hospital",
+								"analytics",
+								"my-hospital"
+							]
+						}
+					}
+				},
 				{
 					"name": "Get District Summary",
 					"event": [
@@ -1410,7 +3520,7 @@
 							},
 							{
 								"key": "X-User-Id",
-								"value": "{{hospitalId}}"
+								"value": "{{hospitalUserId}}"
 							},
 							{
 								"key": "X-User-Role",

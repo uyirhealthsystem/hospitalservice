@@ -27,6 +27,7 @@ public class DoctorResponse {
     private String tnmcNumber;
     private List<String> qualifications;
     private List<String> specialties;
+    private List<String> emergencyConditionsHandled;
     private Integer yearsOfExperience;
     private BigDecimal consultationFee;
     private Availability availability;

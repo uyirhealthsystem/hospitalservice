@@ -1,6 +1,7 @@
 package com.uyir.hospital.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -185,5 +186,34 @@ class HospitalMetricsControllerTest {
 
         mockMvc.perform(get(BASE + "/Chennai")).andExpect(status().isForbidden());
         verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    void myHospitalMetrics_usesCallersHospital() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(metricsService.getHospitalMetrics("h1", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(HospitalMetricsResponse.builder().hospitalId("h1").build());
+
+        mockMvc.perform(post(BASE + "/my-hospital").contentType("application/json")
+                        .content("{\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hospitalId").value("h1"));
+    }
+
+    @Test
+    void myHospitalMetrics_noBody_passesNullDates() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(metricsService.getHospitalMetrics(eq("h1"), isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
+
+        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isOk());
+    }
+
+    @Test
+    void myHospitalMetrics_notHospital_returns403() throws Exception {
+        when(currentUserContext.requireHospitalId())
+                .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
+
+        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isForbidden());
+        verifyNoInteractions(metricsService);
     }
 }

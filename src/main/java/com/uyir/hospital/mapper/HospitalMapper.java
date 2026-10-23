@@ -41,6 +41,7 @@ public class HospitalMapper {
     public HospitalResponse toResponse(Hospital hospital) {
         return HospitalResponse.builder()
                 .id(hospital.getId())
+                .userId(hospital.getUserId())
                 .hospitalName(hospital.getHospitalName())
                 .registrationNumber(hospital.getRegistrationNumber())
                 .ownershipType(hospital.getOwnershipType())

@@ -10,6 +10,7 @@ import com.uyir.hospital.dto.DistrictAnalyticsSummary.BedStats;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary.DoctorStats;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary.EmergencyBookingStats;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary.HospitalStats;
+import com.uyir.hospital.dto.HospitalAnalyticsReport;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
@@ -103,6 +104,21 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
         return DistrictAnalyticsReport.builder()
                 .summary(buildSummary(district, range, data))
                 .hospitals(buildBreakdown(data))
+                .trends(buildTrends(range, data))
+                .build();
+    }
+
+    @Override
+    public HospitalAnalyticsReport getHospitalReport(String hospitalId, LocalDate fromDate, LocalDate toDate) {
+        DateRange range = DateRange.resolve(fromDate, toDate);
+        Hospital hospital = hospitalRepository.findById(hospitalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hospital not found with id '" + hospitalId + "'"));
+        DistrictData data = load(List.of(hospital), range);
+        return HospitalAnalyticsReport.builder()
+                .fromDate(range.from)
+                .toDate(range.to)
+                .generatedAt(Instant.now())
+                .hospital(toHospitalAnalytics(hospital, data))
                 .trends(buildTrends(range, data))
                 .build();
     }

@@ -1,5 +1,7 @@
 package com.uyir.hospital.service.impl;
 
+import com.uyir.hospital.catalog.EmergencyConditionCatalog;
+import com.uyir.hospital.catalog.SpecialtyCatalog;
 import com.uyir.hospital.dto.DoctorRequest;
 import com.uyir.hospital.dto.DoctorResponse;
 import com.uyir.hospital.dto.DoctorSearchRequest;
@@ -26,15 +28,21 @@ public class DoctorServiceImpl implements DoctorService {
     private final DoctorRepository doctorRepository;
     private final HospitalRepository hospitalRepository;
     private final DoctorMapper doctorMapper;
+    private final SpecialtyCatalog specialtyCatalog;
+    private final EmergencyConditionCatalog emergencyConditionCatalog;
 
     @Override
     public DoctorResponse create(DoctorRequest request) {
+        List<String> specialties = specialtyCatalog.normalize("specialties", request.getSpecialties());
+        List<String> emergencyConditions = normalizedEmergencyConditions(request);
         if (doctorRepository.existsByTnmcNumber(request.getTnmcNumber())) {
             throw new DuplicateResourceException(
                     "Doctor with TNMC number '" + request.getTnmcNumber() + "' already exists");
         }
 
         Doctor doctor = doctorMapper.toEntity(request);
+        doctor.setSpecialties(specialties);
+        doctor.setEmergencyConditionsHandled(emergencyConditions);
         doctor.setActive(true);
         doctor.setCreatedAt(Instant.now());
         doctor.setUpdatedAt(Instant.now());
@@ -54,8 +62,12 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     public PageResponse<DoctorResponse> search(DoctorSearchRequest request, Pageable pageable) {
+        // A code ("CAR001") searches by its official name. Anything not in the master list is searched as
+        // typed, so doctors saved before the list existed can still be found.
+        String specialty = request.getSpecialty() == null ? null
+                : specialtyCatalog.resolve(request.getSpecialty()).orElse(request.getSpecialty());
         DoctorSearchCriteria criteria = DoctorSearchCriteria.builder()
-                .specialty(request.getSpecialty())
+                .specialty(specialty)
                 .hospitalId(request.getHospitalId())
                 .engagementType(request.getEngagementType())
                 .doctorCategory(request.getDoctorCategory())
@@ -68,6 +80,8 @@ public class DoctorServiceImpl implements DoctorService {
     @Override
     public DoctorResponse update(String id, DoctorRequest request) {
         Doctor doctor = findEntityOrThrow(id);
+        List<String> specialties = specialtyCatalog.normalize("specialties", request.getSpecialties());
+        List<String> emergencyConditions = normalizedEmergencyConditions(request);
 
         if (!doctor.getTnmcNumber().equals(request.getTnmcNumber())
                 && doctorRepository.existsByTnmcNumber(request.getTnmcNumber())) {
@@ -76,9 +90,16 @@ public class DoctorServiceImpl implements DoctorService {
         }
 
         doctorMapper.updateEntity(doctor, request);
+        doctor.setSpecialties(specialties);
+        doctor.setEmergencyConditionsHandled(emergencyConditions);
         doctor.setUpdatedAt(Instant.now());
 
         return doctorMapper.toResponse(doctorRepository.save(doctor));
+    }
+
+    // emergencyConditionsHandled must be among the 16 SOS emergency conditions, stored as official names.
+    private List<String> normalizedEmergencyConditions(DoctorRequest request) {
+        return emergencyConditionCatalog.normalize("emergencyConditionsHandled", request.getEmergencyConditionsHandled());
     }
 
     @Override

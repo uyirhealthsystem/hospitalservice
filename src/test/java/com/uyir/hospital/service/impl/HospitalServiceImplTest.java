@@ -8,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.uyir.hospital.catalog.EmergencyConditionCatalog;
+import com.uyir.hospital.catalog.SpecialtyCatalog;
 import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.exception.DuplicateResourceException;
@@ -15,9 +17,11 @@ import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.HospitalMapper;
 import com.uyir.hospital.model.Hospital;
 import com.uyir.hospital.model.embedded.EmergencyServices;
+import com.uyir.hospital.model.embedded.Facilities;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.service.HospitalSeatService;
 import com.uyir.hospital.repository.HospitalSearchCriteria;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +37,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.Metrics;
 import org.springframework.data.geo.Point;
+import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 class HospitalServiceImplTest {
@@ -40,13 +45,20 @@ class HospitalServiceImplTest {
     @Mock
     private HospitalRepository hospitalRepository;
 
+    @Mock
+    private HospitalSeatService hospitalSeatService;
+
     private final HospitalMapper hospitalMapper = new HospitalMapper();
+
+    private final SpecialtyCatalog specialtyCatalog = new SpecialtyCatalog(JsonMapper.builder().build());
+
+    private final EmergencyConditionCatalog emergencyConditionCatalog = new EmergencyConditionCatalog(JsonMapper.builder().build());
 
     private HospitalServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new HospitalServiceImpl(hospitalRepository, hospitalMapper);
+        service = new HospitalServiceImpl(hospitalRepository, hospitalMapper, hospitalSeatService, specialtyCatalog, emergencyConditionCatalog);
     }
 
     private HospitalRequest.HospitalRequestBuilder validRequestBuilder() {
@@ -79,20 +91,151 @@ class HospitalServiceImplTest {
     @Test
     void create_newRegistrationNumber_savesAsActive() {
         when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
-        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> {
+            Hospital saved = inv.getArgument(0);
+            saved.setId("h1");
+            return saved;
+        });
 
-        HospitalResponse response = service.create(validRequestBuilder().build());
+        HospitalResponse response = service.create("u1", validRequestBuilder().build());
 
         assertThat(response.isActive()).isTrue();
         assertThat(response.getCreatedAt()).isNotNull();
+        assertThat(response.getUserId()).isEqualTo("u1");
+        verify(hospitalSeatService).ensureFreeSeat("h1");
+    }
+
+    @Test
+    void create_departmentsByCodeOrName_savedAsOfficialNamesWithoutDuplicates() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        HospitalResponse response = service.create("u1", validRequestBuilder()
+                .facilities(Facilities.builder()
+                        .specialtyDepartments(List.of("CAR001", "neurology", "Cardiology"))
+                        .build())
+                .build());
+
+        assertThat(response.getFacilities().getSpecialtyDepartments()).containsExactly("Cardiology", "Neurology");
+    }
+
+    @Test
+    void create_departmentNotInMasterList_rejectedBeforeAnyLookupAndNeverSaved() {
+        assertThatThrownBy(() -> service.create("u1", validRequestBuilder()
+                        .facilities(Facilities.builder().specialtyDepartments(List.of("Cardiology", "Heart Ward")).build())
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("facilities.specialtyDepartments")
+                .hasMessageContaining("Heart Ward");
+
+        verify(hospitalRepository, never()).existsByRegistrationNumber(any());
+        verify(hospitalRepository, never()).save(any());
+    }
+
+    @Test
+    void create_emergencyConditionsByCodeOrName_savedAsOfficialNamesWithoutDuplicates() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        HospitalResponse response = service.create("u1", validRequestBuilder()
+                .emergencyServices(EmergencyServices.builder()
+                        .handlesEmergencies(true)
+                        .specialtyEmergencyConditionsHandled(List.of("EMG001", "stroke / paralysis / sudden weakness", "EMG016", "EMG001"))
+                        .build())
+                .build());
+
+        assertThat(response.getEmergencyServices().getSpecialtyEmergencyConditionsHandled()).containsExactly(
+                "Chest Pain / Sweating / Palpitation", "Stroke / Paralysis / Sudden Weakness", "Other Emergency");
+    }
+
+    @Test
+    void create_emergencyConditionsAreIndependentOfDepartments() {
+        // Departments are for appointments, conditions for emergencies - a Pregnancy emergency needs no
+        // Obstetrics department (whether it's covered depends on the doctors on duty, at booking time).
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        HospitalResponse response = service.create("u1", validRequestBuilder()
+                .facilities(Facilities.builder().specialtyDepartments(List.of("Dermatology")).build())
+                .emergencyServices(EmergencyServices.builder()
+                        .handlesEmergencies(true)
+                        .specialtyEmergencyConditionsHandled(List.of("EMG006"))
+                        .build())
+                .build());
+
+        assertThat(response.getEmergencyServices().getSpecialtyEmergencyConditionsHandled())
+                .containsExactly("Pregnancy Related Emergency");
+        assertThat(response.getFacilities().getSpecialtyDepartments()).containsExactly("Dermatology");
+    }
+
+    @Test
+    void create_unknownEmergencyCondition_rejected() {
+        assertThatThrownBy(() -> service.create("u1", validRequestBuilder()
+                        .emergencyServices(EmergencyServices.builder()
+                                .specialtyEmergencyConditionsHandled(List.of("Cardiac Arrest"))
+                                .build())
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("emergencyServices.specialtyEmergencyConditionsHandled")
+                .hasMessageContaining("Cardiac Arrest")
+                .hasMessageContaining("/api/v1/hospital/emergency-conditions");
+
+        verify(hospitalRepository, never()).save(any());
+    }
+
+    @Test
+    void create_facilitiesWithoutDepartments_isAllowed() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        HospitalResponse response = service.create("u1", validRequestBuilder()
+                .facilities(Facilities.builder().build())
+                .build());
+
+        assertThat(response.getFacilities().getSpecialtyDepartments()).isNull();
+    }
+
+    @Test
+    void update_departmentNotInMasterList_rejectedAndNeverSaved() {
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(existingHospital()));
+
+        assertThatThrownBy(() -> service.update("h1", validRequestBuilder()
+                        .facilities(Facilities.builder().specialtyDepartments(List.of("Heart Ward")).build())
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(hospitalRepository, never()).save(any());
+    }
+
+    @Test
+    void update_departmentCodes_savedAsOfficialNames() {
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(existingHospital()));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        HospitalResponse response = service.update("h1", validRequestBuilder()
+                .facilities(Facilities.builder().specialtyDepartments(List.of("ORT001", "EMC001")).build())
+                .build());
+
+        assertThat(response.getFacilities().getSpecialtyDepartments()).containsExactly("Orthopedics", "Emergency Medicine");
     }
 
     @Test
     void create_duplicateRegistrationNumber_throwsAndNeverSaves() {
         when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(validRequestBuilder().build()))
+        assertThatThrownBy(() -> service.create("u1", validRequestBuilder().build()))
                 .isInstanceOf(DuplicateResourceException.class);
+
+        verify(hospitalRepository, never()).save(any());
+    }
+
+    @Test
+    void create_userAlreadyOwnsAHospital_throwsAndNeverSaves() {
+        when(hospitalRepository.existsByUserId("u1")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("u1", validRequestBuilder().build()))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("u1");
 
         verify(hospitalRepository, never()).save(any());
     }
@@ -199,7 +342,7 @@ class HospitalServiceImplTest {
         Hospital hospital = existingHospital();
         hospital.setEmergencyServices(EmergencyServices.builder()
                 .handlesEmergencies(true)
-                .specialtyEmergencyConditionsHandled(List.of("Cardiac Arrest"))
+                .specialtyEmergencyConditionsHandled(List.of("Chest Pain / Sweating / Palpitation"))
                 .build());
         when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
         when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -210,7 +353,7 @@ class HospitalServiceImplTest {
         verify(hospitalRepository).save(captor.capture());
         EmergencyServices saved = captor.getValue().getEmergencyServices();
         assertThat(saved.isHandlesEmergencies()).isFalse();
-        assertThat(saved.getSpecialtyEmergencyConditionsHandled()).containsExactly("Cardiac Arrest");
+        assertThat(saved.getSpecialtyEmergencyConditionsHandled()).containsExactly("Chest Pain / Sweating / Palpitation");
     }
 
     @Test

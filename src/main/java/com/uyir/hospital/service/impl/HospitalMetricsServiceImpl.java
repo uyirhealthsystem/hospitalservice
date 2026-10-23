@@ -5,6 +5,7 @@ import com.uyir.hospital.dto.HospitalMetricsResponse.AppointmentMetrics;
 import com.uyir.hospital.dto.HospitalMetricsResponse.DoctorMetrics;
 import com.uyir.hospital.dto.HospitalMetricsResponse.EmergencyBookingMetrics;
 import com.uyir.hospital.dto.HospitalMetricsResponse.HospitalMetrics;
+import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.model.Hospital;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
@@ -32,6 +33,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class HospitalMetricsServiceImpl implements HospitalMetricsService {
 
+    // Emergencies still in progress: waiting for the hospital, or accepted but not yet completed.
+    private static final Set<EmergencyBookingStatus> OPEN_EMERGENCY_STATUSES =
+            EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED);
     private static final Set<AppointmentStatus> UPCOMING_STATUSES =
             EnumSet.of(AppointmentStatus.CONFIRMED, AppointmentStatus.RESCHEDULED);
 
@@ -71,7 +75,7 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
                 .emergencyBookings(EmergencyBookingMetrics.builder()
                         .total(sum(emergencyByStatus))
                         .byStatus(emergencyByStatus)
-                        .openNow(emergencyBookingRepository.countByStatus(EmergencyBookingStatus.REQUESTED))
+                        .openNow(emergencyBookingRepository.countByStatusIn(OPEN_EMERGENCY_STATUSES))
                         .build())
                 .appointments(AppointmentMetrics.builder()
                         .total(sum(appointmentsByStatus))
@@ -86,9 +90,25 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
     @Override
     public HospitalMetricsResponse getDistrictMetrics(String district, LocalDate fromDate, LocalDate toDate) {
         DateRange range = DateRange.resolve(fromDate, toDate);
+        HospitalMetricsResponse response = metricsFor(hospitalRepository.findByAddressDistrictIgnoreCase(district), range);
+        response.setDistrict(district);
+        return response;
+    }
+
+    // The same counts for a single hospital - what a HOSPITAL caller sees about itself.
+    @Override
+    public HospitalMetricsResponse getHospitalMetrics(String hospitalId, LocalDate fromDate, LocalDate toDate) {
+        DateRange range = DateRange.resolve(fromDate, toDate);
+        Hospital hospital = hospitalRepository.findById(hospitalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hospital not found with id '" + hospitalId + "'"));
+        HospitalMetricsResponse response = metricsFor(List.of(hospital), range);
+        response.setHospitalId(hospitalId);
+        return response;
+    }
+
+    private HospitalMetricsResponse metricsFor(List<Hospital> hospitals, DateRange range) {
         Instant now = Instant.now();
 
-        List<Hospital> hospitals = hospitalRepository.findByAddressDistrictIgnoreCase(district);
         Set<String> ids = hospitals.stream().map(Hospital::getId).collect(Collectors.toSet());
         List<Hospital> activeHospitals = hospitals.stream().filter(Hospital::isActive).toList();
         // An empty $in matches nothing anyway - skip the round trips.
@@ -102,7 +122,6 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
                         ids, status, range.start(), range.end()));
 
         return HospitalMetricsResponse.builder()
-                .district(district)
                 .fromDate(range.from())
                 .toDate(range.to())
                 .generatedAt(now)
@@ -123,8 +142,8 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
                 .emergencyBookings(EmergencyBookingMetrics.builder()
                         .total(sum(emergencyByStatus))
                         .byStatus(emergencyByStatus)
-                        .openNow(none ? 0 : emergencyBookingRepository.countByHospitalIdInAndStatus(
-                                ids, EmergencyBookingStatus.REQUESTED))
+                        .openNow(none ? 0 : emergencyBookingRepository.countByHospitalIdInAndStatusIn(
+                                ids, OPEN_EMERGENCY_STATUSES))
                         .build())
                 .appointments(AppointmentMetrics.builder()
                         .total(sum(appointmentsByStatus))

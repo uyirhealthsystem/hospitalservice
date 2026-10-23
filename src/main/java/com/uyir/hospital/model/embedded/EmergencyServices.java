@@ -15,7 +15,8 @@ public class EmergencyServices {
 
     private boolean handlesEmergencies;
 
-    // Populated only when handlesEmergencies is true; expected to match the notified list of 13 specialty emergency conditions
+    // Populated only when handlesEmergencies is true. Official names from the 16 SOS emergency conditions
+    // (EmergencyConditionCatalog), enforced on save. A doctor on duty here must handle the condition too.
     private List<String> specialtyEmergencyConditionsHandled;
 
     private boolean ambulanceAvailable;

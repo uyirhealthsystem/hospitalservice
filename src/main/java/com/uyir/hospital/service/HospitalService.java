@@ -10,9 +10,13 @@ import org.springframework.data.domain.Pageable;
 
 public interface HospitalService {
 
-    HospitalResponse create(HospitalRequest request);
+    // userId is the creating HOSPITAL account's AuthService id; each user may own only one hospital.
+    HospitalResponse create(String userId, HospitalRequest request);
 
     HospitalResponse getById(String id);
+
+    // The hospital created by this AuthService user (each user owns at most one).
+    HospitalResponse getByUserId(String userId);
 
     PageResponse<HospitalResponse> search(
             String city,

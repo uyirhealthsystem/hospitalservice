@@ -1,0 +1,18 @@
+[
+  { "code": "EMG001", "name": "Chest Pain / Sweating / Palpitation", "icon": "❤️" },
+  { "code": "EMG002", "name": "Stroke / Paralysis / Sudden Weakness", "icon": "🧠" },
+  { "code": "EMG003", "name": "Fits / Seizures / Fainting", "icon": "⚡" },
+  { "code": "EMG004", "name": "Unconscious / Unresponsive", "icon": "🚨" },
+  { "code": "EMG005", "name": "Breathing Problem", "icon": "🫁" },
+  { "code": "EMG006", "name": "Pregnancy Related Emergency", "icon": "🤰" },
+  { "code": "EMG007", "name": "Child Emergency", "icon": "👶" },
+  { "code": "EMG008", "name": "Burns / Electric Shock", "icon": "🔥" },
+  { "code": "EMG009", "name": "Severe Bleeding / Trauma", "icon": "🩸" },
+  { "code": "EMG010", "name": "Fall / Fracture", "icon": "🦴" },
+  { "code": "EMG011", "name": "Abdominal Pain", "icon": "🤕" },
+  { "code": "EMG012", "name": "Road Traffic Accident", "icon": "🚗" },
+  { "code": "EMG013", "name": "Allergy / Anaphylaxis", "icon": "🌼" },
+  { "code": "EMG014", "name": "Poison Intake", "icon": "☠️" },
+  { "code": "EMG015", "name": "Snake Bite / Animal Bite", "icon": "🐍" },
+  { "code": "EMG016", "name": "Other Emergency", "icon": "❗" }
+]

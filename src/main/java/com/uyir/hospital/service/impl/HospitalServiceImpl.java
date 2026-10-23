@@ -1,5 +1,7 @@
 package com.uyir.hospital.service.impl;
 
+import com.uyir.hospital.catalog.EmergencyConditionCatalog;
+import com.uyir.hospital.catalog.SpecialtyCatalog;
 import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
 import com.uyir.hospital.dto.PageResponse;
@@ -8,10 +10,12 @@ import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.HospitalMapper;
 import com.uyir.hospital.model.Hospital;
 import com.uyir.hospital.model.embedded.EmergencyServices;
+import com.uyir.hospital.model.embedded.Facilities;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.repository.HospitalSearchCriteria;
+import com.uyir.hospital.service.HospitalSeatService;
 import com.uyir.hospital.service.HospitalService;
 import java.time.Instant;
 import java.util.Comparator;
@@ -29,25 +33,44 @@ public class HospitalServiceImpl implements HospitalService {
 
     private final HospitalRepository hospitalRepository;
     private final HospitalMapper hospitalMapper;
+    private final HospitalSeatService hospitalSeatService;
+    private final SpecialtyCatalog specialtyCatalog;
+    private final EmergencyConditionCatalog emergencyConditionCatalog;
 
     @Override
-    public HospitalResponse create(HospitalRequest request) {
+    public HospitalResponse create(String userId, HospitalRequest request) {
+        List<String> departments = normalizedDepartments(request);
+        List<String> conditions = normalizedConditions(request);
+        if (hospitalRepository.existsByUserId(userId)) {
+            throw new DuplicateResourceException("User '" + userId + "' has already created a hospital");
+        }
         if (hospitalRepository.existsByRegistrationNumber(request.getRegistrationNumber())) {
             throw new DuplicateResourceException(
                     "Hospital with registration number '" + request.getRegistrationNumber() + "' already exists");
         }
 
         Hospital hospital = hospitalMapper.toEntity(request);
+        applyCatalogValues(hospital, departments, conditions);
+        hospital.setUserId(userId);
         hospital.setActive(true);
         hospital.setCreatedAt(Instant.now());
         hospital.setUpdatedAt(Instant.now());
 
-        return hospitalMapper.toResponse(hospitalRepository.save(hospital));
+        Hospital saved = hospitalRepository.save(hospital);
+        hospitalSeatService.ensureFreeSeat(saved.getId());
+        return hospitalMapper.toResponse(saved);
     }
 
     @Override
     public HospitalResponse getById(String id) {
         return hospitalMapper.toResponse(findEntityOrThrow(id));
+    }
+
+    @Override
+    public HospitalResponse getByUserId(String userId) {
+        return hospitalRepository.findByUserId(userId)
+                .map(hospitalMapper::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException("No hospital found for user '" + userId + "'"));
     }
 
     @Override
@@ -73,6 +96,8 @@ public class HospitalServiceImpl implements HospitalService {
     @Override
     public HospitalResponse update(String id, HospitalRequest request) {
         Hospital hospital = findEntityOrThrow(id);
+        List<String> departments = normalizedDepartments(request);
+        List<String> conditions = normalizedConditions(request);
 
         if (!hospital.getRegistrationNumber().equals(request.getRegistrationNumber())
                 && hospitalRepository.existsByRegistrationNumber(request.getRegistrationNumber())) {
@@ -81,9 +106,37 @@ public class HospitalServiceImpl implements HospitalService {
         }
 
         hospitalMapper.updateEntity(hospital, request);
+        applyCatalogValues(hospital, departments, conditions);
         hospital.setUpdatedAt(Instant.now());
 
         return hospitalMapper.toResponse(hospitalRepository.save(hospital));
+    }
+
+    // facilities.specialtyDepartments (appointment booking) must come from the specialty master list, same rule
+    // as a doctor's specialties, stored as official names. Validated before anything is looked up or saved.
+    private List<String> normalizedDepartments(HospitalRequest request) {
+        Facilities facilities = request.getFacilities();
+        return facilities == null ? null
+                : specialtyCatalog.normalize("facilities.specialtyDepartments", facilities.getSpecialtyDepartments());
+    }
+
+    // emergencyServices.specialtyEmergencyConditionsHandled (emergency booking) must be among the 16 SOS emergency
+    // conditions - independent of the departments. Stored as official names, which is what SOS and emergency
+    // booking match the patient's emergencyType against.
+    private List<String> normalizedConditions(HospitalRequest request) {
+        EmergencyServices emergencyServices = request.getEmergencyServices();
+        return emergencyServices == null ? null
+                : emergencyConditionCatalog.normalize(
+                        "emergencyServices.specialtyEmergencyConditionsHandled", emergencyServices.getSpecialtyEmergencyConditionsHandled());
+    }
+
+    private static void applyCatalogValues(Hospital hospital, List<String> departments, List<String> conditions) {
+        if (hospital.getFacilities() != null) {
+            hospital.getFacilities().setSpecialtyDepartments(departments);
+        }
+        if (hospital.getEmergencyServices() != null) {
+            hospital.getEmergencyServices().setSpecialtyEmergencyConditionsHandled(conditions);
+        }
     }
 
     @Override

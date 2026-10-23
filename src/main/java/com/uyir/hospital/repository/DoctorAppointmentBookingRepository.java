@@ -19,6 +19,11 @@ public interface DoctorAppointmentBookingRepository extends MongoRepository<Doct
     List<DoctorAppointmentBooking> findByDoctorIdStatusInStartingBetween(
             String doctorId, Collection<AppointmentStatus> statuses, Instant from, Instant to);
 
+    // Used to block taking a doctor out of a seat while they still have patients coming.
+    @Query(value = "{ 'hospitalId': ?0, 'doctorId': ?1, 'status': { $in: ?2 }, 'appointmentDateTime': { $gte: ?3 } }", exists = true)
+    boolean existsUpcomingForDoctorAtHospital(
+            String hospitalId, String doctorId, Collection<AppointmentStatus> statuses, Instant from);
+
     // Half-open [from, to) so consecutive day/period windows never double-count an appointment.
     @Query("{ 'hospitalId': { $in: ?0 }, 'appointmentDateTime': { $gte: ?1, $lt: ?2 } }")
     List<DoctorAppointmentBooking> findByHospitalIdsScheduledBetween(Collection<String> hospitalIds, Instant from, Instant to);

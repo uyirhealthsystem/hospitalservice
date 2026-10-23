@@ -99,7 +99,7 @@ class DoctorAppointmentBookingControllerTest {
 
     @Test
     void getMyBookings_asHospital_returnsOwnBookings() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("h1");
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(doctorAppointmentBookingService.getByHospitalId("h1"))
                 .thenReturn(List.of(response("a1", AppointmentStatus.CONFIRMED)));
 
@@ -129,7 +129,7 @@ class DoctorAppointmentBookingControllerTest {
 
     @Test
     void reschedule_asHospital_returns200WithRescheduledStatus() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("h1");
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(doctorAppointmentBookingService.reschedule(
                         eq("a1"), eq("h1"), any(RescheduleAppointmentRequest.class)))
                 .thenReturn(response("a1", AppointmentStatus.RESCHEDULED));
@@ -171,6 +171,23 @@ class DoctorAppointmentBookingControllerTest {
     }
 
     @Test
+    void cancel_asHospital_passesResolvedHospitalIdToService() throws Exception {
+        when(currentUserContext.requireAnyRole(Role.PATIENT, Role.HOSPITAL)).thenReturn("u1");
+        when(currentUserContext.getRole()).thenReturn(Role.HOSPITAL);
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(doctorAppointmentBookingService.cancel(
+                        eq("a1"), eq("h1"), eq(Role.HOSPITAL), any(CancelAppointmentRequest.class)))
+                .thenReturn(response("a1", AppointmentStatus.CANCELLED));
+
+        mockMvc.perform(patch("/api/v1/hospital/doctor-appointments/a1/cancel")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(
+                                CancelAppointmentRequest.builder().reason("Doctor unavailable").build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
     void cancel_missingReason_returns400() throws Exception {
         when(currentUserContext.requireAnyRole(Role.PATIENT, Role.HOSPITAL)).thenReturn("p1");
 
@@ -182,7 +199,7 @@ class DoctorAppointmentBookingControllerTest {
 
     @Test
     void updateStatus_asHospital_returns200() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("h1");
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(doctorAppointmentBookingService.updateStatus(
                         eq("a1"), eq("h1"), any(UpdateAppointmentStatusRequest.class)))
                 .thenReturn(response("a1", AppointmentStatus.NO_SHOW));
@@ -198,7 +215,7 @@ class DoctorAppointmentBookingControllerTest {
 
     @Test
     void updateStatus_notHospitalRole_returns403() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL))
+        when(currentUserContext.requireHospitalId())
                 .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
 
         mockMvc.perform(patch("/api/v1/hospital/doctor-appointments/a1/status")
@@ -211,7 +228,7 @@ class DoctorAppointmentBookingControllerTest {
 
     @Test
     void reschedule_notHospitalRole_returns403() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL))
+        when(currentUserContext.requireHospitalId())
                 .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
 
         mockMvc.perform(patch("/api/v1/hospital/doctor-appointments/a1/reschedule")
