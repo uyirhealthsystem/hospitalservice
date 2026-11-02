@@ -38,7 +38,9 @@ import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
 import com.uyir.hospital.exception.ConflictException;
+import com.uyir.hospital.service.BillingService;
 import com.uyir.hospital.service.DoctorTokenLimitService;
+import java.math.BigDecimal;
 import com.uyir.hospital.service.HospitalSeatService;
 import java.util.Set;
 import com.uyir.hospital.security.Role;
@@ -74,6 +76,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private DoctorTokenLimitService doctorTokenLimitService;
 
+    @Mock
+    private BillingService billingService;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -84,11 +89,48 @@ class DoctorAppointmentBookingServiceImplTest {
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
                 doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator,
-                hospitalSeatService, doctorTokenLimitService);
+                hospitalSeatService, doctorTokenLimitService, billingService);
         // Every doctor holds a seat unless a test says otherwise.
         lenient().when(hospitalSeatService.hasSeat(anyString(), anyString())).thenReturn(true);
         // No token limit unless a test sets one (Mockito would otherwise return 0 for an Integer).
         lenient().when(doctorTokenLimitService.limitFor(anyString(), anyString(), any(LocalDate.class))).thenReturn(null);
+        lenient().when(billingService.currentCommissionPerAppointment()).thenReturn(new BigDecimal("20.00"));
+    }
+
+    @Test
+    void create_stampsCurrentCommissionOnBooking() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create("p1", validRequest());
+
+        org.mockito.ArgumentCaptor<DoctorAppointmentBooking> saved =
+                org.mockito.ArgumentCaptor.forClass(DoctorAppointmentBooking.class);
+        verify(doctorAppointmentBookingRepository).save(saved.capture());
+        assertThat(saved.getValue().getCommissionFee()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void create_hospitalWithOverdueInvoice_throwsConflictWithoutClaimingToken() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(billingService.hasOverdueInvoice("h1")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("p1", validRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("not accepting new appointments");
+        verify(appointmentTokenGenerator, never()).claim(any(), any(), any(), any());
+        verify(doctorAppointmentBookingRepository, never()).save(any());
+    }
+
+    @Test
+    void getAvailability_hospitalWithOverdueInvoice_notAvailable() {
+        LocalDate day = LocalDate.of(2026, 11, 5);
+        when(appointmentTokenGenerator.takenTokens("h1", "d1", day)).thenReturn(Set.of());
+        when(billingService.hasOverdueInvoice("h1")).thenReturn(true);
+
+        assertThat(service.getAvailability("h1", "d1", day).isAvailable()).isFalse();
     }
 
     private DoctorAppointmentBookingRequest validRequest() {

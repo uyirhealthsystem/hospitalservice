@@ -7,6 +7,7 @@ import com.uyir.hospital.model.enums.ConsultationType;
 import com.uyir.hospital.model.enums.PatientRelationship;
 import com.uyir.hospital.model.enums.Sex;
 import com.uyir.hospital.model.enums.VisitType;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -54,6 +55,10 @@ public class DoctorAppointmentBooking {
     private List<String> symptoms;
 
     private AppointmentStatus status;
+
+    // Uyir's commission for this appointment, charged to the hospital on its monthly invoice. Stamped
+    // at booking time with the rate then in force; null on bookings made before billing started (never billed).
+    private BigDecimal commissionFee;
 
     private String cancellationReason;
     private CancelledBy cancelledBy;

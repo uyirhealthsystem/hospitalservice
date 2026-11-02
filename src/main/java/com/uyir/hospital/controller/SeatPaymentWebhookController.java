@@ -2,7 +2,9 @@ package com.uyir.hospital.controller;
 
 import com.uyir.hospital.exception.PaymentUnavailableException;
 import com.uyir.hospital.exception.WebhookRejectedException;
+import com.uyir.hospital.payment.PaymentClient;
 import com.uyir.hospital.payment.PaymentWebhookEvent;
+import com.uyir.hospital.service.BillingService;
 import com.uyir.hospital.payment.SeatProperties;
 import com.uyir.hospital.payment.WebhookSignature;
 import com.uyir.hospital.service.HospitalSeatService;
@@ -23,24 +25,28 @@ import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
-// payment-service reports a seat purchase's payment result here. No user token: the call is
-// authenticated by an HMAC signature over the raw body (see WebhookSignature). payment-service
-// retries until it gets a 2xx, and HospitalSeatService.onPaymentEvent is idempotent.
+// payment-service reports a seat purchase's or a commission invoice's payment result here. No user
+// token: the call is authenticated by an HMAC signature over the raw body (see WebhookSignature).
+// Both referenceTypes share the secret; either path accepts either type and the event goes to the
+// owner of its referenceType. payment-service retries until it gets a 2xx; both handlers are idempotent.
 @RestController
-@RequestMapping("/api/v1/hospital/seats/payments")
-@Tag(name = "Doctor Seats")
+@RequestMapping("/api/v1/hospital")
+@Tag(name = "Payment Webhooks")
 public class SeatPaymentWebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(SeatPaymentWebhookController.class);
 
     private final HospitalSeatService hospitalSeatService;
+    private final BillingService billingService;
     private final JsonMapper jsonMapper;
     private final Validator validator;
     private final WebhookSignature signature;
 
     public SeatPaymentWebhookController(
-            HospitalSeatService hospitalSeatService, JsonMapper jsonMapper, Validator validator, SeatProperties props) {
+            HospitalSeatService hospitalSeatService, BillingService billingService, JsonMapper jsonMapper,
+            Validator validator, SeatProperties props) {
         this.hospitalSeatService = hospitalSeatService;
+        this.billingService = billingService;
         this.jsonMapper = jsonMapper;
         this.validator = validator;
         SeatProperties.Payment cfg = props.payment();
@@ -49,19 +55,24 @@ public class SeatPaymentWebhookController {
                 : null;
     }
 
-    @PostMapping("/webhook")
+    @PostMapping({"/seats/payments/webhook", "/invoices/payments/webhook"})
     public Map<String, Boolean> webhook(
             @RequestHeader(value = "X-Payment-Timestamp", required = false) String timestamp,
             @RequestHeader(value = "X-Payment-Signature", required = false) String sig,
             @RequestBody byte[] raw) {
         if (signature == null) {
-            throw new PaymentUnavailableException("Seat payment webhook is not configured (hospital.seat.payment.webhook-secret)");
+            throw new PaymentUnavailableException("Payment webhook is not configured (hospital.seat.payment.webhook-secret)");
         }
         if (!signature.isValid(timestamp, sig, raw)) {
-            log.warn("Rejected seat payment webhook: bad or expired signature");
+            log.warn("Rejected payment webhook: bad or expired signature");
             throw new WebhookRejectedException("Bad or expired signature");
         }
-        hospitalSeatService.onPaymentEvent(parse(raw));
+        PaymentWebhookEvent event = parse(raw);
+        if (PaymentClient.INVOICE_REFERENCE_TYPE.equals(event.referenceType())) {
+            billingService.onPaymentEvent(event);
+        } else {
+            hospitalSeatService.onPaymentEvent(event);
+        }
         return Map.of("ok", true);
     }
 

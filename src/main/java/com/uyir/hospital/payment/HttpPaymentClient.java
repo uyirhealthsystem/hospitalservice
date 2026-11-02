@@ -2,6 +2,7 @@ package com.uyir.hospital.payment;
 
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.exception.PaymentUnavailableException;
+import com.uyir.hospital.model.CommissionInvoice;
 import com.uyir.hospital.model.SeatPurchase;
 import java.math.BigDecimal;
 import org.slf4j.Logger;
@@ -15,8 +16,8 @@ import org.springframework.web.client.RestClientException;
 
 // POST {baseUrl}/api/payments/intents
 //   Authorization: Bearer <the hospital user's JWT>   (payment-service checks payerId == token sub)
-//   Idempotency-Key: hospital-seat-purchase-<purchaseId>
-//   { "referenceType": "HOSPITAL_SEAT", "referenceId": "<purchaseId>", "payerId": "...", "amount": 20000.00, "currency": "INR" }
+//   Idempotency-Key: hospital-seat-purchase-<purchaseId>  |  hospital-invoice-<invoiceId>
+//   { "referenceType": "HOSPITAL_SEAT" | "HOSPITAL_INVOICE", "referenceId": "<id>", "payerId": "...", "amount": 20000.00, "currency": "INR" }
 // A network failure is retried once; the idempotency key makes that safe.
 @Component
 @ConditionalOnProperty(name = "hospital.seat.payment.provider", havingValue = "http", matchIfMissing = true)
@@ -41,23 +42,34 @@ public class HttpPaymentClient implements PaymentClient {
 
     @Override
     public Intent createIntent(SeatPurchase purchase, String payerId, String bearerToken) {
-        if (bearerToken == null || bearerToken.isBlank()) {
-            throw new ForbiddenException("An Authorization bearer token is required to pay for seats");
-        }
-        IntentRequest body = new IntentRequest(
-                REFERENCE_TYPE,
-                purchase.getId(),
-                payerId,
-                purchase.getAmount(),
-                purchase.getCurrency(),
-                purchase.getQuantity() + " doctor seat(s)");
+        return post(
+                new IntentRequest(REFERENCE_TYPE, purchase.getId(), payerId, purchase.getAmount(), purchase.getCurrency(),
+                        purchase.getQuantity() + " doctor seat(s)"),
+                "hospital-seat-purchase-" + purchase.getId(),
+                "pay for seats",
+                bearerToken);
+    }
 
+    @Override
+    public Intent createInvoiceIntent(CommissionInvoice invoice, String payerId, String bearerToken) {
+        return post(
+                new IntentRequest(INVOICE_REFERENCE_TYPE, invoice.getId(), payerId, invoice.getAmount(), invoice.getCurrency(),
+                        "Uyir commission " + invoice.getPeriod() + " (" + invoice.getAppointmentCount() + " appointments)"),
+                "hospital-invoice-" + invoice.getId(),
+                "pay an invoice",
+                bearerToken);
+    }
+
+    private Intent post(IntentRequest body, String idempotencyKey, String action, String bearerToken) {
+        if (bearerToken == null || bearerToken.isBlank()) {
+            throw new ForbiddenException("An Authorization bearer token is required to " + action);
+        }
         for (int attempt = 1; ; attempt++) {
             try {
                 Intent intent = http.post()
                         .uri("/api/payments/intents")
                         .header("Authorization", "Bearer " + bearerToken)
-                        .header("Idempotency-Key", "hospital-seat-purchase-" + purchase.getId())
+                        .header("Idempotency-Key", idempotencyKey)
                         .body(body)
                         .retrieve()
                         .body(Intent.class);
@@ -67,19 +79,19 @@ public class HttpPaymentClient implements PaymentClient {
                 return intent;
             } catch (ResourceAccessException e) {
                 if (attempt < ATTEMPTS) {
-                    log.warn("payment-service unreachable for seat purchase {} (attempt {}), retrying: {}",
-                            purchase.getId(), attempt, e.getMessage());
+                    log.warn("payment-service unreachable for {} {} (attempt {}), retrying: {}",
+                            body.referenceType(), body.referenceId(), attempt, e.getMessage());
                     continue;
                 }
-                throw unavailable(purchase, e);
+                throw unavailable(body, e);
             } catch (RestClientException e) {
-                throw unavailable(purchase, e);
+                throw unavailable(body, e);
             }
         }
     }
 
-    private static PaymentUnavailableException unavailable(SeatPurchase purchase, Exception e) {
-        log.error("payment-service call failed for seat purchase {}: {}", purchase.getId(), e.getMessage());
+    private static PaymentUnavailableException unavailable(IntentRequest body, Exception e) {
+        log.error("payment-service call failed for {} {}: {}", body.referenceType(), body.referenceId(), e.getMessage());
         return new PaymentUnavailableException("Payment service unavailable, please retry");
     }
 }

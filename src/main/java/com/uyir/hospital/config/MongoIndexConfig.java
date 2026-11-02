@@ -1,6 +1,8 @@
 package com.uyir.hospital.config;
 
 import com.uyir.hospital.model.AnalyticsSnapshot;
+import com.uyir.hospital.model.AppointmentTokenClaim;
+import com.uyir.hospital.model.CommissionInvoice;
 import com.uyir.hospital.model.Doctor;
 import com.uyir.hospital.model.DoctorAppointmentBooking;
 import com.uyir.hospital.model.EmergencyBooking;
@@ -69,5 +71,17 @@ public class MongoIndexConfig {
 
         IndexOperations analyticsSnapshotIndexOps = mongoTemplate.indexOps(AnalyticsSnapshot.class);
         analyticsSnapshotIndexOps.ensureIndex(new Index().on("district", Direction.ASC).on("createdAt", Direction.DESC));
+
+        // Monthly commission invoicing scans one month of appointments across all hospitals.
+        appointmentBookingIndexOps.ensureIndex(new Index().on("appointmentDateTime", Direction.ASC));
+
+        IndexOperations tokenClaimIndexOps = mongoTemplate.indexOps(AppointmentTokenClaim.class);
+        tokenClaimIndexOps.ensureIndex(
+                new Index().on("hospitalId", Direction.ASC).on("doctorId", Direction.ASC).on("day", Direction.ASC));
+
+        IndexOperations invoiceIndexOps = mongoTemplate.indexOps(CommissionInvoice.class);
+        invoiceIndexOps.ensureIndex(new Index().on("hospitalId", Direction.ASC).on("period", Direction.DESC));
+        invoiceIndexOps.ensureIndex(new Index().on("period", Direction.ASC));
+        invoiceIndexOps.ensureIndex(new Index().on("status", Direction.ASC).on("dueDate", Direction.ASC));
     }
 }

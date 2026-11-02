@@ -651,7 +651,54 @@ Response:
   "tokenLimit": 30, "bookedTokens": 18, "remainingTokens": 12, "available": true }
 ```
 
-`tokenLimit` and `remainingTokens` are `null` when no limit is set (`available` is then `true`).
+`tokenLimit` and `remainingTokens` are `null` when no limit is set. `available` is `false` when tokens are used up, or when the hospital has an overdue commission invoice (see below).
+
+---
+
+# Commission Billing (monthly invoice)
+
+Uyir charges each hospital a commission per **doctor appointment**, billed once a month. **Emergency bookings are never charged.**
+
+- **Rate:** default **₹20 per appointment**, changeable by an admin. Each appointment records the rate at the moment it is booked (`commissionFee`). A rate change only affects bookings made after it.
+- **Billable:** every appointment *scheduled* in the month (IST) that is not `CANCELLED`. This includes `COMPLETED`, `NO_SHOW` and never-marked `CONFIRMED`/`RESCHEDULED`. Bookings made before billing went live carry no `commissionFee` and are never billed.
+- **Invoice:** one per hospital per month (id `<hospitalId>-<yyyy-MM>`), issued at 00:30 IST on the 1st for the previous month. Hospitals with no billable appointments get none. The appointment list is frozen at issue time.
+- **Due:** 15 days after issue. Unpaid after that, the invoice shows `OVERDUE` and the hospital's **new appointment bookings return `409`** (`Hospital '…' is not accepting new appointments at the moment`) until it's paid. Existing appointments, reschedules, and emergency bookings keep working.
+- **No GST** is added yet.
+
+## Hospital (HOSPITAL role)
+
+| Endpoint | Notes |
+|---|---|
+| `GET /api/v1/hospital/invoices` | This hospital's invoices, newest first |
+| `GET /api/v1/hospital/invoices/{id}` | One invoice |
+| `GET /api/v1/hospital/invoices/{id}/appointments` | The appointments billed on it |
+| `POST /api/v1/hospital/invoices/{id}/payment` | Needs the `Authorization: Bearer` header. Returns `checkoutUrl` to pay through payment-service (Razorpay). Call again for a fresh link if it expired |
+
+```json
+{ "id": "h1-2026-11", "hospitalId": "h1", "hospitalName": "City Care", "period": "2026-11",
+  "periodStart": "2026-10-31T18:30:00Z", "periodEnd": "2026-11-30T18:30:00Z",
+  "appointmentCount": 142, "amount": 2840.00, "currency": "INR",
+  "status": "ISSUED", "issuedAt": "2026-11-30T19:00:00Z", "dueDate": "2026-12-15T19:00:00Z",
+  "paymentId": null, "checkoutUrl": null, "failureReason": null, "paidAt": null, "offlinePaymentReference": null }
+```
+
+`status`: `ISSUED` → `PAID`, or `OVERDUE` once past `dueDate` unpaid.
+
+## Admin (ADMIN / SUPER_ADMIN)
+
+| Endpoint | Body / params | Notes |
+|---|---|---|
+| `GET /api/v1/hospital/billing/settings` | – | `{ commissionPerAppointment, currency, dueDays, updatedAt, updatedBy }` |
+| `PUT /api/v1/hospital/billing/settings` | `{ "commissionPerAppointment": 25 }` | ≥ 0. Applies to new bookings only |
+| `GET /api/v1/hospital/billing/invoices` | `?month=2026-11&status=OVERDUE` (both optional) | All hospitals' invoices |
+| `POST /api/v1/hospital/billing/invoices/generate` | `{ "month": "2026-11" }` | Issue a past month by hand (normally automatic). Existing invoices are left unchanged |
+| `POST /api/v1/hospital/billing/invoices/{id}/mark-paid` | `{ "reference": "UTR123..." }` | For bank transfer or cheque payments; unblocks bookings. `409` if already paid |
+
+## Payment callback
+
+payment-service reports invoice payments to `POST /api/v1/hospital/invoices/payments/webhook`, signed like the seat webhook with the same `PAYMENT_WEBHOOK_SECRET` (referenceType `HOSPITAL_INVOICE`). In payment-service, set `HOSPITAL_INVOICE_PAYMENT_WEBHOOK_URL`. Its secret defaults to `HOSPITAL_SEAT_PAYMENT_WEBHOOK_SECRET`.
+
+Config here: `hospital.billing.default-commission-per-appointment` (20.00), `hospital.billing.due-days` (15), `hospital.billing.generate-cron`, `BILLING_SCHEDULE_ENABLED`.
 
 ---
 

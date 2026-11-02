@@ -24,6 +24,8 @@ import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.DoctorAppointmentBookingService;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
+import com.uyir.hospital.exception.ConflictException;
+import com.uyir.hospital.service.BillingService;
 import com.uyir.hospital.service.DoctorTokenLimitService;
 import com.uyir.hospital.service.HospitalSeatService;
 import java.time.Instant;
@@ -56,11 +58,17 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final AppointmentTokenGenerator appointmentTokenGenerator;
     private final HospitalSeatService hospitalSeatService;
     private final DoctorTokenLimitService doctorTokenLimitService;
+    private final BillingService billingService;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
         if (!hospitalRepository.existsById(request.getHospitalId())) {
             throw new ResourceNotFoundException("Hospital not found with id '" + request.getHospitalId() + "'");
+        }
+        // An unpaid commission invoice past its due date pauses new appointments (emergencies are unaffected).
+        if (billingService.hasOverdueInvoice(request.getHospitalId())) {
+            throw new ConflictException("Hospital '" + request.getHospitalId()
+                    + "' is not accepting new appointments at the moment");
         }
 
         Doctor doctor = doctorRepository
@@ -120,6 +128,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .reason(request.getReason())
                 .symptoms(request.getSymptoms())
                 .status(AppointmentStatus.CONFIRMED)
+                .commissionFee(billingService.currentCommissionPerAppointment())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -138,6 +147,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         Integer limit = doctorTokenLimitService.limitFor(hospitalId, doctorId, date);
         int booked = appointmentTokenGenerator.takenTokens(hospitalId, doctorId, date).size();
         Integer remaining = limit == null ? null : Math.max(0, limit - booked);
+        boolean bookingOpen = !billingService.hasOverdueInvoice(hospitalId);
         return TokenAvailabilityResponse.builder()
                 .hospitalId(hospitalId)
                 .doctorId(doctorId)
@@ -145,7 +155,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .tokenLimit(limit)
                 .bookedTokens(booked)
                 .remainingTokens(remaining)
-                .available(remaining == null || remaining > 0)
+                .available(bookingOpen && (remaining == null || remaining > 0))
                 .build();
     }
 

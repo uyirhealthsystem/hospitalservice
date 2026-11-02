@@ -85,6 +85,26 @@
       "key": "accessToken",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "invoiceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invoicePaymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invoiceAmount",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invoiceMonth",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -2439,9 +2459,385 @@
       "id": "641e6ba3-5c8c-4eeb-8994-536bdcc8397d"
     },
     {
+      "name": "Appointment Token Limits",
+      "id": "0cb10347-d4d0-4655-a56c-84fed9e497fe",
+      "description": "How many appointment tokens the hospital issues per seated doctor per day. Daily limit applies every day; a date limit overrides it for one date (0 = doctor not taking appointments). No limit = unlimited. Booking returns 409 once all tokens for the day are taken; cancelling frees a token. Emergency bookings are not affected.\n\nRun after Doctor Seats › Assign Doctor to Seat (the doctor must hold a seat). [auto:2026-11]",
+      "item": [
+        {
+          "name": "Set Daily Token Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('dailyLimit 30', () => pm.expect(pm.response.json().dailyLimit).to.eql(30));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits/{{doctorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits",
+                "{{doctorId}}"
+              ]
+            },
+            "description": "Tokens issued for the doctor every day (1-1000). Send {\"dailyLimit\": null} to remove the limit.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dailyLimit\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "da49fc92-67a2-4446-8375-82b1bd11eb69"
+        },
+        {
+          "name": "Set Date Token Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('date override stored', () => pm.expect(pm.response.json().dateLimits['2026-12-01']).to.eql(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits/{{doctorId}}/dates/2026-12-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits",
+                "{{doctorId}}",
+                "dates",
+                "2026-12-01"
+              ]
+            },
+            "description": "Overrides the daily limit for one date (0-1000; today or later). 0 = no appointments that day (e.g. leave).\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "908b0052-9603-42b6-9696-5fac189c80c4"
+        },
+        {
+          "name": "Get Token Limits",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('is a list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits"
+              ]
+            },
+            "description": "The hospital's limits, one entry per doctor. dateLimits lists today and later only.\n\n[auto:2026-11]"
+          },
+          "id": "59c3fe8f-4676-4861-afc3-d4743378faeb"
+        },
+        {
+          "name": "Remove Date Token Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('override removed', () => pm.expect(pm.response.json().dateLimits).to.not.have.property('2026-12-01'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits/{{doctorId}}/dates/2026-12-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits",
+                "{{doctorId}}",
+                "dates",
+                "2026-12-01"
+              ]
+            },
+            "description": "Drops the date override so the daily limit applies again. 404 if none was set.\n\n[auto:2026-11]"
+          },
+          "id": "dad2b029-9e1f-40b6-83ca-98a6537a25a5"
+        },
+        {
+          "name": "Set Daily Token Limit 0 (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits/{{doctorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits",
+                "{{doctorId}}"
+              ]
+            },
+            "description": "dailyLimit must be at least 1; use a date limit of 0 to close a single day.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dailyLimit\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "411f9fd9-39f6-4889-a7e4-3c17d602a016"
+        },
+        {
+          "name": "Set Token Limit as Patient (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/token-limits/{{doctorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "token-limits",
+                "{{doctorId}}"
+              ]
+            },
+            "description": "Token limits are HOSPITAL-only.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dailyLimit\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "b4fef32b-f24c-49a0-a0fd-f13fc6afc8ea"
+        }
+      ]
+    },
+    {
       "name": "Doctor Appointment Bookings",
       "description": "Patient books, hospital manages. X-User-Id / X-User-Role come from the gateway in production.\n\nOrder: Create (captures {{appointmentBookingId}}) → lists → Reschedule (hospital) → Update Status (hospital; only after the scheduled time) → Cancel (patient or hospital).\n\nPrerequisite: the doctor must hold a seat at the hospital — run Doctor Seats › Get Seats and Assign Doctor to Seat first, otherwise Create returns 400.",
       "item": [
+        {
+          "name": "Check Token Availability",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('has availability fields', () => { pm.expect(body).to.have.property('bookedTokens'); pm.expect(body).to.have.property('available'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/availability?hospitalId={{hospitalId}}&doctorId={{doctorId}}&date=2026-12-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "availability"
+              ],
+              "query": [
+                {
+                  "key": "hospitalId",
+                  "value": "{{hospitalId}}"
+                },
+                {
+                  "key": "doctorId",
+                  "value": "{{doctorId}}"
+                },
+                {
+                  "key": "date",
+                  "value": "2026-12-01"
+                }
+              ]
+            },
+            "description": "Before booking: the token limit for the doctor on that date, how many are booked and how many remain. tokenLimit/remainingTokens are null when the hospital set no limit. available is false when tokens are used up or the hospital has an overdue commission invoice. Any caller.\n\n[auto:2026-11]"
+          },
+          "id": "4419f9bd-d7af-4aae-86f6-9e9a19d8c9b2"
+        },
         {
           "name": "Create Appointment Booking (Patient)",
           "event": [
@@ -2669,6 +3065,92 @@
             }
           },
           "id": "2b575925-bdd0-4e2a-8940-6615d65d0909"
+        },
+        {
+          "name": "Get My Appointment Detail (Patient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('has appointment, hospital and doctor', () => { pm.expect(body.appointment.id).to.eql(pm.collectionVariables.get('appointmentBookingId')); pm.expect(body).to.have.property('hospital'); pm.expect(body).to.have.property('doctor'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{appointmentBookingId}}"
+              ]
+            },
+            "description": "One of the patient's own appointments with the hospital and doctor details and a cancellable flag.\n\n[auto:2026-11]"
+          },
+          "id": "bf370ab9-f955-4e47-81c9-c2720b94a2db"
+        },
+        {
+          "name": "Get Another Patient's Appointment (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "someone-else-001"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{appointmentBookingId}}"
+              ]
+            },
+            "description": "A patient can only read their own appointments.\n\n[auto:2026-11]"
+          },
+          "id": "ddfd7858-b66e-4c99-853f-d5902a28b746"
         },
         {
           "name": "Reschedule Appointment Booking (Hospital)",
@@ -2929,6 +3411,969 @@
         }
       ],
       "id": "8bad0918-c4f6-42ba-ba41-c1677e160263"
+    },
+    {
+      "name": "Patient Activity",
+      "id": "6153c300-1af2-4a6f-8f2c-2c302c45d596",
+      "description": "The logged-in patient's emergency bookings and appointments as one timeline, newest first, with a summary. [auto:2026-11]",
+      "item": [
+        {
+          "name": "Get My Activity (Patient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('has summary', () => pm.expect(pm.response.json()).to.have.property('summary'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/patients/me/activity?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "patients",
+                "me",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "?type=EMERGENCY|APPOINTMENT narrows the list; page (0-based) / size (default 20, max 100).\n\n[auto:2026-11]"
+          },
+          "id": "e58238d9-8596-43f5-9b00-667ce02bc1b2"
+        },
+        {
+          "name": "Get My Appointment Activity (Patient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/patients/me/activity?type=APPOINTMENT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "patients",
+                "me",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "APPOINTMENT"
+                }
+              ]
+            },
+            "description": "Appointments only.\n\n[auto:2026-11]"
+          },
+          "id": "bce4dff4-43b4-4d9d-848f-cc2f0c603c0c"
+        },
+        {
+          "name": "Get Activity as Hospital (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/patients/me/activity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "patients",
+                "me",
+                "activity"
+              ]
+            },
+            "description": "PATIENT-only.\n\n[auto:2026-11]"
+          },
+          "id": "cf5b5276-d450-449c-96d7-85d150d25cd3"
+        }
+      ]
+    },
+    {
+      "name": "Commission Billing",
+      "id": "4ab8b122-3309-4f3d-b41d-68695254c786",
+      "description": "Uyir charges each hospital a commission per doctor appointment (default ₹20, set by admin), invoiced monthly. Emergency bookings are never billed. Invoices are issued automatically at 00:30 IST on the 1st for the previous month; due 15 days later. An OVERDUE invoice pauses new appointment bookings at that hospital (409) until paid.\n\nOnly appointments booked after billing went live count, so a fresh database has nothing to bill for last month: the invoice requests then skip themselves. [auto:2026-11]",
+      "item": [
+        {
+          "name": "Get Billing Settings (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('has rate', () => pm.expect(pm.response.json().commissionPerAppointment).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "settings"
+              ]
+            },
+            "description": "Current commission per appointment, currency and due days.\n\n[auto:2026-11]"
+          },
+          "id": "79f2ba3f-ecd5-4ec4-9cf9-a0ba38166670"
+        },
+        {
+          "name": "Update Commission Rate (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('rate is 20', () => pm.expect(pm.response.json().commissionPerAppointment).to.eql(20));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "settings"
+              ]
+            },
+            "description": "Rate for appointments booked from now on; existing bookings keep the rate they were booked at. ≥ 0.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commissionPerAppointment\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "73835ff3-0085-4cef-b837-c7b1101ff107"
+        },
+        {
+          "name": "Update Commission Rate Negative (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "settings"
+              ]
+            },
+            "description": "The rate cannot be negative.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commissionPerAppointment\": -5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "1d5a02cd-fd4b-4064-9970-80473170ec76"
+        },
+        {
+          "name": "Update Commission Rate as Hospital (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "settings"
+              ]
+            },
+            "description": "Billing settings are ADMIN / SUPER_ADMIN only.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commissionPerAppointment\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "51f9aac8-713c-403e-a4d6-3449b05d2ac8"
+        },
+        {
+          "name": "Generate Invoices for Last Month (Admin)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Invoices can only be issued for a month that has ended: use last month (IST).",
+                  "const now = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));",
+                  "pm.collectionVariables.set('invoiceMonth', d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('is a list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/invoices/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "invoices",
+                "generate"
+              ]
+            },
+            "description": "Normally runs by itself on the 1st. Issues one invoice per hospital with billable appointments; existing invoices are returned unchanged. The month must have ended (400 otherwise).\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"month\": \"{{invoiceMonth}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "65ecc859-7291-45d4-82ac-f278d6d088f0"
+        },
+        {
+          "name": "Generate Invoices for Current Month (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/invoices/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "invoices",
+                "generate"
+              ]
+            },
+            "description": "A month that has not ended cannot be invoiced.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"month\": \"2099-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "db71ad32-45d9-43a0-b1f5-776bd26a6e5c"
+        },
+        {
+          "name": "List Invoices for Month (Admin)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Invoices can only be issued for a month that has ended: use last month (IST).",
+                  "const now = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));",
+                  "pm.collectionVariables.set('invoiceMonth', d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('is a list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/invoices?month={{invoiceMonth}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{invoiceMonth}}"
+                }
+              ]
+            },
+            "description": "All hospitals. Filters: month (yyyy-MM) and/or status (ISSUED | OVERDUE | PAID).\n\n[auto:2026-11]"
+          },
+          "id": "87cfcd1e-c6f3-4bec-8a7f-2fae79fb196b"
+        },
+        {
+          "name": "List Overdue Invoices (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('all overdue', () => pm.response.json().forEach(i => pm.expect(i.status).to.eql('OVERDUE')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/invoices?status=OVERDUE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "OVERDUE"
+                }
+              ]
+            },
+            "description": "Hospitals whose new appointment bookings are currently paused.\n\n[auto:2026-11]"
+          },
+          "id": "e2b1ddbf-cb36-4851-9f40-08a809034c7f"
+        },
+        {
+          "name": "Get My Invoices (Hospital)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "const open = list.find(i => i.status !== 'PAID') || list[0];",
+                  "pm.collectionVariables.set('invoiceId', open ? open.id : '');",
+                  "if (open) pm.collectionVariables.set('invoiceAmount', String(open.amount));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "invoices"
+              ]
+            },
+            "description": "The hospital's invoices, newest first. Captures an unpaid one (or the latest) as {{invoiceId}}.\n\n[auto:2026-11]"
+          },
+          "id": "fe505d62-e293-4ff7-b2f5-9b9043e7df79"
+        },
+        {
+          "name": "Get My Invoice (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('invoiceId')) {",
+                  "    console.log('No invoice to act on (none was issued for the month) - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status known', () => pm.expect(pm.response.json().status).to.be.oneOf(['ISSUED', 'OVERDUE', 'PAID']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/invoices/{{invoiceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "invoices",
+                "{{invoiceId}}"
+              ]
+            },
+            "description": "ISSUED, OVERDUE (unpaid past dueDate) or PAID.\n\n[auto:2026-11]"
+          },
+          "id": "06b7cf65-bbd8-408d-961d-626985904716"
+        },
+        {
+          "name": "Get Invoice Appointments (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('invoiceId')) {",
+                  "    console.log('No invoice to act on (none was issued for the month) - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('is a list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/invoices/{{invoiceId}}/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "invoices",
+                "{{invoiceId}}",
+                "appointments"
+              ]
+            },
+            "description": "The appointments billed on the invoice (frozen when it was issued).\n\n[auto:2026-11]"
+          },
+          "id": "be349ab2-bdb0-432f-bae1-ce04674e2c2f"
+        },
+        {
+          "name": "Pay Invoice (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('invoiceId')) {",
+                  "    console.log('No invoice to act on (none was issued for the month) - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('invoicePaymentId', body.paymentId || '');",
+                  "pm.collectionVariables.set('invoiceAmount', String(body.amount));",
+                  "if (body.checkoutUrl) console.log('Open to pay (Razorpay test mode):', body.checkoutUrl);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/invoices/{{invoiceId}}/payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "invoices",
+                "{{invoiceId}}",
+                "payment"
+              ]
+            },
+            "description": "Starts (or resumes) paying through payment-service; open checkoutUrl. Needs Authorization: Bearer {{accessToken}}. Call again for a fresh link if it expired.\n\n[auto:2026-11]"
+          },
+          "id": "5792e944-f826-4654-873b-9206e2c4ff4f"
+        },
+        {
+          "name": "Invoice Payment Webhook - Simulate PAID (signed)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('invoiceId')) {",
+                  "    console.log('No invoice to act on (none was issued for the month) - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "// Signs the body the way payment-service does: hex(HMAC-SHA256(secret, timestamp + '.' + rawBody)).",
+                  "// {{seatWebhookSecret}} must equal hospitalservice's PAYMENT_WEBHOOK_SECRET (shared by seats and invoices).",
+                  "const secret = pm.variables.get('seatWebhookSecret');",
+                  "if (!secret) throw new Error('Set seatWebhookSecret in the environment (= PAYMENT_WEBHOOK_SECRET)');",
+                  "const ts = Math.floor(Date.now() / 1000).toString();",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "pm.request.body.raw = raw;",
+                  "const sig = CryptoJS.HmacSHA256(ts + '.' + raw, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.upsert({ key: 'X-Payment-Timestamp', value: ts });",
+                  "pm.request.headers.upsert({ key: 'X-Payment-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('acknowledged', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/invoices/payments/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "invoices",
+                "payments",
+                "webhook"
+              ]
+            },
+            "description": "Called by payment-service only. Marks the invoice PAID locally without paying (run Pay Invoice first). Signed with {{seatWebhookSecret}}; idempotent.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentId\": \"{{invoicePaymentId}}\",\n  \"referenceType\": \"HOSPITAL_INVOICE\",\n  \"referenceId\": \"{{invoiceId}}\",\n  \"status\": \"PAID\",\n  \"amount\": {{invoiceAmount}},\n  \"currency\": \"INR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "ee18f418-ee42-4250-8335-44cef64a04d7"
+        },
+        {
+          "name": "Mark Invoice Paid Offline (Admin)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('invoiceId')) {",
+                  "    console.log('No invoice to act on (none was issued for the month) - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, or 409 if already paid', () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{adminId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/billing/invoices/{{invoiceId}}/mark-paid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "billing",
+                "invoices",
+                "{{invoiceId}}",
+                "mark-paid"
+              ]
+            },
+            "description": "For a bank transfer / cheque payment made outside the app; unblocks bookings. 409 if the invoice is already paid.\n\n[auto:2026-11]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"UTR-TEST-0001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "7e54d52d-6aa2-405c-be83-08ce733d1891"
+        }
+      ]
     },
     {
       "name": "Hospital Metrics",
