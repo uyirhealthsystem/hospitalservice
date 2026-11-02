@@ -1,5 +1,6 @@
 package com.uyir.hospital.model;
 
+import com.uyir.hospital.model.embedded.FollowUpInstruction;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.BookedFor;
 import com.uyir.hospital.model.enums.CancelledBy;
@@ -35,6 +36,8 @@ public class DoctorAppointmentBooking {
     private String patientId;
     private String patientName;
     private String patientPhone;
+    // Where follow-up reminders go; optional (the app fills it from the patient's profile).
+    private String patientEmail;
     private Integer patientAge;
     private Sex patientGender;
     private BookedFor bookedFor;
@@ -59,6 +62,9 @@ public class DoctorAppointmentBooking {
     // Uyir's commission for this appointment, charged to the hospital on its monthly invoice. Stamped
     // at booking time with the rate then in force; null on bookings made before billing started (never billed).
     private BigDecimal commissionFee;
+
+    // Set by the hospital on a COMPLETED appointment when the patient should come back.
+    private FollowUpInstruction followUp;
 
     private String cancellationReason;
     private CancelledBy cancelledBy;

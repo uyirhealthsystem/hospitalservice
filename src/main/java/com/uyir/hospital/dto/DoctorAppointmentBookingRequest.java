@@ -5,6 +5,7 @@ import com.uyir.hospital.model.enums.ConsultationType;
 import com.uyir.hospital.model.enums.PatientRelationship;
 import com.uyir.hospital.model.enums.Sex;
 import com.uyir.hospital.model.enums.VisitType;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -42,7 +43,9 @@ public class DoctorAppointmentBookingRequest {
     // Defaults to IN_PERSON when omitted.
     private ConsultationType consultationType;
 
-    // Defaults to NEW when omitted; FOLLOW_UP requires previousAppointmentId.
+    // Defaults to NEW when omitted. FOLLOW_UP requires previousAppointmentId: a COMPLETED appointment of
+    // this patient where the hospital asked for a follow-up, with the same doctor and hospital, booked
+    // within the follow-up's bookable window.
     private VisitType visitType;
 
     private String previousAppointmentId;
@@ -57,6 +60,11 @@ public class DoctorAppointmentBookingRequest {
 
     @NotBlank
     private String patientPhone;
+
+    // Optional: follow-up reminder emails go here (pre-fill from the patient's profile).
+    @Email
+    @Size(max = 254)
+    private String patientEmail;
 
     @NotNull
     @Min(0)

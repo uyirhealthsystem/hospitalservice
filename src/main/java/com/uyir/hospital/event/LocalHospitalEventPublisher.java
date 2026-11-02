@@ -30,4 +30,11 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
     public void emergencyBookingRequested(EmergencyBookingRequestedEvent event) {
         alertHub.push(event);
     }
+
+    // No Kafka, so no notification-service: the reminder email is not sent.
+    @Override
+    public void followUpReminderDue(FollowUpReminderDueEvent event) {
+        log.info("Kafka is off: follow-up reminder ({}) for appointment '{}' not emailed",
+                event.reminderType(), event.appointmentId());
+    }
 }

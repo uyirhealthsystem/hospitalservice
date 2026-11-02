@@ -6,6 +6,7 @@ import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
+import com.uyir.hospital.dto.FollowUpRequest;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
 import com.uyir.hospital.security.Role;
 import java.time.LocalDate;
@@ -30,4 +31,9 @@ public interface DoctorAppointmentBookingService {
     DoctorAppointmentBookingResponse cancel(String id, String userId, Role role, CancelAppointmentRequest request);
 
     DoctorAppointmentBookingResponse updateStatus(String id, String hospitalId, UpdateAppointmentStatusRequest request);
+
+    // Hospital: ask the patient of a COMPLETED appointment to come back (sets or replaces the instruction).
+    DoctorAppointmentBookingResponse setFollowUp(String id, String hospitalId, FollowUpRequest request);
+
+    DoctorAppointmentBookingResponse removeFollowUp(String id, String hospitalId);
 }

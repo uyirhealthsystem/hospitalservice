@@ -36,7 +36,9 @@ import com.uyir.hospital.model.enums.VisitType;
 import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
 import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.dto.FollowUpRequest;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
+import com.uyir.hospital.model.embedded.FollowUpInstruction;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.service.BillingService;
 import com.uyir.hospital.service.DoctorTokenLimitService;
@@ -79,6 +81,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private BillingService billingService;
 
+    @Mock
+    private FollowUpStore followUpStore;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -89,7 +94,8 @@ class DoctorAppointmentBookingServiceImplTest {
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
                 doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator,
-                hospitalSeatService, doctorTokenLimitService, billingService);
+                hospitalSeatService, doctorTokenLimitService, billingService, followUpStore);
+        lenient().when(followUpStore.link(anyString(), anyString())).thenReturn(true);
         // Every doctor holds a seat unless a test says otherwise.
         lenient().when(hospitalSeatService.hasSeat(anyString(), anyString())).thenReturn(true);
         // No token limit unless a test sets one (Mockito would otherwise return 0 for an Integer).
@@ -470,25 +476,255 @@ class DoctorAppointmentBookingServiceImplTest {
         assertThatThrownBy(() -> service.create("p1", request)).isInstanceOf(ForbiddenException.class);
     }
 
-    @Test
-    void create_followUpOfCompletedAppointment_savesLink() {
-        when(hospitalRepository.existsById("h1")).thenReturn(true);
-        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
-        when(doctorAppointmentBookingRepository.findById("prev")).thenReturn(Optional.of(DoctorAppointmentBooking.builder()
+    // A COMPLETED visit of p1 with d1 at h1 where the hospital asked for a follow-up due on `due`.
+    private DoctorAppointmentBooking completedWithFollowUp(LocalDate due, String linkedBookingId) {
+        return DoctorAppointmentBooking.builder()
                 .id("prev")
                 .patientId("p1")
+                .hospitalId("h1")
+                .doctorId("d1")
                 .status(AppointmentStatus.COMPLETED)
-                .build()));
-        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .followUp(FollowUpInstruction.builder().dueDate(due.toString()).followUpBookingId(linkedBookingId).build())
+                .build();
+    }
+
+    private DoctorAppointmentBookingRequest followUpRequest() {
         DoctorAppointmentBookingRequest request = validRequest();
         request.setVisitType(VisitType.FOLLOW_UP);
         request.setPreviousAppointmentId("prev");
+        return request;
+    }
 
-        DoctorAppointmentBookingResponse response = service.create("p1", request);
+    private void bookableHospitalAndDoctor() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+    }
+
+    @Test
+    void create_followUpWithinWindow_savesAndLinksToPreviousVisit() {
+        bookableHospitalAndDoctor();
+        when(doctorAppointmentBookingRepository.findById("prev"))
+                .thenReturn(Optional.of(completedWithFollowUp(AppointmentTokenGenerator.localDay(future), null)));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        DoctorAppointmentBookingResponse response = service.create("p1", followUpRequest());
 
         assertThat(response.getVisitType()).isEqualTo(VisitType.FOLLOW_UP);
         assertThat(response.getPreviousAppointmentId()).isEqualTo("prev");
+        verify(followUpStore).link("prev", response.getId());
+    }
+
+    @Test
+    void create_followUpWhenHospitalDidNotAskForOne_throwsIllegalArgument() {
+        bookableHospitalAndDoctor();
+        DoctorAppointmentBooking previous = completedWithFollowUp(LocalDate.now(), null);
+        previous.setFollowUp(null);
+        when(doctorAppointmentBookingRepository.findById("prev")).thenReturn(Optional.of(previous));
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("has not asked for a follow-up");
+    }
+
+    @Test
+    void create_followUpWithDifferentDoctor_throwsIllegalArgument() {
+        bookableHospitalAndDoctor();
+        DoctorAppointmentBooking previous = completedWithFollowUp(AppointmentTokenGenerator.localDay(future), null);
+        previous.setDoctorId("d2");
+        when(doctorAppointmentBookingRepository.findById("prev")).thenReturn(Optional.of(previous));
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("same doctor");
+    }
+
+    @Test
+    void create_followUpOutsideWindow_throwsIllegalArgumentNamingTheWindow() {
+        bookableHospitalAndDoctor();
+        // Due 20 days after the requested date: bookable only from 17 days after it.
+        LocalDate due = AppointmentTokenGenerator.localDay(future).plusDays(20);
+        when(doctorAppointmentBookingRepository.findById("prev")).thenReturn(Optional.of(completedWithFollowUp(due, null)));
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("from " + due.minusDays(3) + " to " + due.plusDays(7));
+        verify(followUpStore, never()).link(any(), any());
+    }
+
+    @Test
+    void create_followUpAlreadyBooked_throwsConflict() {
+        bookableHospitalAndDoctor();
+        when(doctorAppointmentBookingRepository.findById("prev"))
+                .thenReturn(Optional.of(completedWithFollowUp(AppointmentTokenGenerator.localDay(future), "other")));
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest())).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void create_followUpLinkRaceLost_throwsConflictWithoutClaimingToken() {
+        bookableHospitalAndDoctor();
+        when(doctorAppointmentBookingRepository.findById("prev"))
+                .thenReturn(Optional.of(completedWithFollowUp(AppointmentTokenGenerator.localDay(future), null)));
+        when(followUpStore.link(eq("prev"), anyString())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest())).isInstanceOf(ConflictException.class);
+        verify(appointmentTokenGenerator, never()).claim(any(), any(), any(), any());
+    }
+
+    @Test
+    void create_followUpButTokensFull_unlinksPreviousVisit() {
+        bookableHospitalAndDoctor();
+        when(doctorAppointmentBookingRepository.findById("prev"))
+                .thenReturn(Optional.of(completedWithFollowUp(AppointmentTokenGenerator.localDay(future), null)));
+        when(appointmentTokenGenerator.claim(any(), any(), any(), any())).thenThrow(new ConflictException("full"));
+
+        assertThatThrownBy(() -> service.create("p1", followUpRequest())).isInstanceOf(ConflictException.class);
+        verify(followUpStore).unlink(eq("prev"), anyString());
+    }
+
+    @Test
+    void cancel_followUpBooking_unlinksPreviousVisit() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1").patientId("p1").hospitalId("h1").doctorId("d1").appointmentDateTime(future)
+                .visitType(VisitType.FOLLOW_UP).previousAppointmentId("prev")
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.cancel("a1", "p1", Role.PATIENT, CancelAppointmentRequest.builder().reason("Busy").build());
+
+        verify(followUpStore).unlink("prev", "a1");
+    }
+
+    // --- hospital sets the follow-up ---
+
+    private DoctorAppointmentBooking completedVisitYesterday() {
+        return DoctorAppointmentBooking.builder()
+                .id("a1").patientId("p1").hospitalId("h1").doctorId("d1")
+                .appointmentDateTime(Instant.now().minus(1, ChronoUnit.DAYS))
+                .status(AppointmentStatus.COMPLETED)
+                .build();
+    }
+
+    @Test
+    void setFollowUp_afterDays_countsFromVisitDate() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+        when(followUpStore.replaceIfNotBooked(eq("a1"), any())).thenReturn(true);
+
+        service.setFollowUp("a1", "h1", FollowUpRequest.builder().afterDays(7).instructions(" Bring reports ").build());
+
+        org.mockito.ArgumentCaptor<FollowUpInstruction> stored = org.mockito.ArgumentCaptor.forClass(FollowUpInstruction.class);
+        verify(followUpStore).replaceIfNotBooked(eq("a1"), stored.capture());
+        LocalDate visitDay = AppointmentTokenGenerator.localDay(visit.getAppointmentDateTime());
+        assertThat(stored.getValue().getDueDate()).isEqualTo(visitDay.plusDays(7).toString());
+        assertThat(stored.getValue().getInstructions()).isEqualTo("Bring reports");
+        assertThat(stored.getValue().getSetBy()).isEqualTo("h1");
+    }
+
+    @Test
+    void setFollowUp_bothAfterDaysAndDate_throwsIllegalArgument() {
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(completedVisitYesterday()));
+
+        assertThatThrownBy(() -> service.setFollowUp("a1", "h1",
+                        FollowUpRequest.builder().afterDays(7).date(LocalDate.now().plusDays(7)).build()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void setFollowUp_pastDate_throwsIllegalArgument() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        visit.setAppointmentDateTime(Instant.now().minus(30, ChronoUnit.DAYS));
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+
+        assertThatThrownBy(() -> service.setFollowUp("a1", "h1", FollowUpRequest.builder().afterDays(5).build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("in the past");
+    }
+
+    @Test
+    void setFollowUp_notCompleted_throwsIllegalArgument() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        visit.setStatus(AppointmentStatus.CONFIRMED);
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+
+        assertThatThrownBy(() -> service.setFollowUp("a1", "h1", FollowUpRequest.builder().afterDays(7).build()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void setFollowUp_alreadyBookedByPatient_throwsConflict() {
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(completedVisitYesterday()));
+        when(followUpStore.replaceIfNotBooked(eq("a1"), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setFollowUp("a1", "h1", FollowUpRequest.builder().afterDays(7).build()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void setFollowUp_otherHospital_throwsForbidden() {
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(completedVisitYesterday()));
+
+        assertThatThrownBy(() -> service.setFollowUp("a1", "h2", FollowUpRequest.builder().afterDays(7).build()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void removeFollowUp_none_throwsNotFound() {
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(completedVisitYesterday()));
+
+        assertThatThrownBy(() -> service.removeFollowUp("a1", "h1")).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void updateStatus_completedWithFollowUp_storesInstruction() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        visit.setStatus(AppointmentStatus.CONFIRMED);
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        LocalDate due = LocalDate.now(AppointmentTokenGenerator.ZONE).plusDays(10);
+
+        DoctorAppointmentBookingResponse response = service.updateStatus("a1", "h1", UpdateAppointmentStatusRequest.builder()
+                .status(AppointmentStatus.COMPLETED)
+                .followUp(FollowUpRequest.builder().date(due).instructions("Review").build())
+                .build());
+
+        assertThat(response.getStatus()).isEqualTo(AppointmentStatus.COMPLETED);
+        assertThat(response.getFollowUp().getDueDate()).isEqualTo(due);
+        assertThat(response.getFollowUp().getBookableFrom()).isEqualTo(due.minusDays(3));
+        assertThat(response.getFollowUp().getBookableUntil()).isEqualTo(due.plusDays(7));
+    }
+
+    @Test
+    void updateStatus_noShowWithFollowUp_throwsIllegalArgument() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        visit.setStatus(AppointmentStatus.CONFIRMED);
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+
+        assertThatThrownBy(() -> service.updateStatus("a1", "h1", UpdateAppointmentStatusRequest.builder()
+                        .status(AppointmentStatus.NO_SHOW)
+                        .followUp(FollowUpRequest.builder().afterDays(7).build())
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateStatus_noShowOfFollowUpVisit_unlinksSoPatientCanRebook() {
+        DoctorAppointmentBooking visit = completedVisitYesterday();
+        visit.setStatus(AppointmentStatus.CONFIRMED);
+        visit.setVisitType(VisitType.FOLLOW_UP);
+        visit.setPreviousAppointmentId("prev");
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(visit));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateStatus("a1", "h1", UpdateAppointmentStatusRequest.builder().status(AppointmentStatus.NO_SHOW).build());
+
+        verify(followUpStore).unlink("prev", "a1");
     }
 
     @Test

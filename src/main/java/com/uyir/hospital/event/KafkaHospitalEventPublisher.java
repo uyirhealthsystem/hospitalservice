@@ -60,6 +60,31 @@ public class KafkaHospitalEventPublisher implements HospitalEventPublisher {
         });
     }
 
+    // Keyed by patient id. A lost reminder is logged, not retried: it is a courtesy, and the patient still
+    // sees the follow-up in the app.
+    @Override
+    public void followUpReminderDue(FollowUpReminderDueEvent event) {
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(HospitalEvent.of(
+                    FollowUpReminderDueEvent.EVENT_TYPE, FollowUpReminderDueEvent.EVENT_VERSION, event));
+        } catch (RuntimeException ex) {
+            log.error("Could not serialize FollowUpReminderDue for appointment '{}'", event.appointmentId(), ex);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                kafkaTemplate.send(topic, event.patientId(), json).whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to publish FollowUpReminderDue for appointment '{}'", event.appointmentId(), ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                log.error("Failed to publish FollowUpReminderDue for appointment '{}'", event.appointmentId(), ex);
+            }
+        });
+    }
+
     // No email goes out and other pods' dashboards miss it, but dashboards connected to this pod still
     // get the alert - and the booking is saved either way, so it shows up on the dashboard's next refresh.
     private void onSendFailed(EmergencyBookingRequestedEvent event, Throwable ex) {

@@ -24,7 +24,10 @@ import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.DoctorAppointmentBookingService;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
+import com.uyir.hospital.dto.FollowUpRequest;
 import com.uyir.hospital.exception.ConflictException;
+import com.uyir.hospital.model.embedded.FollowUpInstruction;
+import org.bson.types.ObjectId;
 import com.uyir.hospital.service.BillingService;
 import com.uyir.hospital.service.DoctorTokenLimitService;
 import com.uyir.hospital.service.HospitalSeatService;
@@ -59,6 +62,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final HospitalSeatService hospitalSeatService;
     private final DoctorTokenLimitService doctorTokenLimitService;
     private final BillingService billingService;
+    private final FollowUpStore followUpStore;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
@@ -103,14 +107,31 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 : DoctorAppointmentBooking.DEFAULT_DURATION_MINUTES;
         ensureSlotFree(request.getDoctorId(), request.getAppointmentDateTime(), durationMinutes, null);
 
+        // The id is chosen up front so a follow-up can be linked to the visit that asked for it before saving.
+        String bookingId = new ObjectId().toHexString();
+        String previousId = visitType == VisitType.FOLLOW_UP ? request.getPreviousAppointmentId() : null;
+        if (previousId != null && !followUpStore.link(previousId, bookingId)) {
+            throw new ConflictException("A follow-up for appointment '" + previousId + "' is already booked");
+        }
+
         // Last check before saving: 409 when the hospital's tokens for that doctor and day are all taken.
-        int tokenNumber = claimToken(request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime());
+        int tokenNumber;
+        try {
+            tokenNumber = claimToken(request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime());
+        } catch (RuntimeException noToken) {
+            if (previousId != null) {
+                followUpStore.unlink(previousId, bookingId);
+            }
+            throw noToken;
+        }
 
         Instant now = Instant.now();
         DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id(bookingId)
                 .patientId(patientId)
                 .patientName(request.getPatientName())
                 .patientPhone(request.getPatientPhone())
+                .patientEmail(request.getPatientEmail())
                 .patientAge(request.getPatientAge())
                 .patientGender(request.getPatientGender())
                 .bookedFor(bookedFor)
@@ -138,8 +159,66 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         } catch (RuntimeException saveFailed) {
             appointmentTokenGenerator.release(
                     request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime(), tokenNumber);
+            if (previousId != null) {
+                followUpStore.unlink(previousId, bookingId);
+            }
             throw saveFailed;
         }
+    }
+
+    @Override
+    public DoctorAppointmentBookingResponse setFollowUp(String id, String hospitalId, FollowUpRequest request) {
+        DoctorAppointmentBooking booking = findOwnedByHospital(id, hospitalId);
+        if (booking.getStatus() != AppointmentStatus.COMPLETED) {
+            throw new IllegalArgumentException("A follow-up can only be set on a COMPLETED appointment");
+        }
+        FollowUpInstruction followUp = buildFollowUp(booking, request, hospitalId);
+        if (!followUpStore.replaceIfNotBooked(id, followUp)) {
+            throw followUpAlreadyBooked(id);
+        }
+        return doctorAppointmentBookingMapper.toResponse(findById(id));
+    }
+
+    @Override
+    public DoctorAppointmentBookingResponse removeFollowUp(String id, String hospitalId) {
+        DoctorAppointmentBooking booking = findOwnedByHospital(id, hospitalId);
+        if (booking.getFollowUp() == null) {
+            throw new ResourceNotFoundException("Appointment '" + id + "' has no follow-up instruction");
+        }
+        if (!followUpStore.replaceIfNotBooked(id, null)) {
+            throw followUpAlreadyBooked(id);
+        }
+        return doctorAppointmentBookingMapper.toResponse(findById(id));
+    }
+
+    // Due date = the given date, or the visit's (IST) date + afterDays. Must fall after the visit and not in the past.
+    private static FollowUpInstruction buildFollowUp(
+            DoctorAppointmentBooking booking, FollowUpRequest request, String hospitalId) {
+        if ((request.getAfterDays() == null) == (request.getDate() == null)) {
+            throw new IllegalArgumentException("Give exactly one of followUp.afterDays or followUp.date");
+        }
+        LocalDate visitDay = AppointmentTokenGenerator.localDay(booking.getAppointmentDateTime());
+        LocalDate due = request.getDate() != null ? request.getDate() : visitDay.plusDays(request.getAfterDays());
+        if (!due.isAfter(visitDay)) {
+            throw new IllegalArgumentException("The follow-up date must be after the visit (" + visitDay + ")");
+        }
+        if (due.isBefore(LocalDate.now(AppointmentTokenGenerator.ZONE))) {
+            throw new IllegalArgumentException("The follow-up date " + due + " is in the past");
+        }
+        String instructions = request.getInstructions() == null || request.getInstructions().isBlank()
+                ? null
+                : request.getInstructions().trim();
+        return FollowUpInstruction.builder()
+                .dueDate(due.toString())
+                .instructions(instructions)
+                .setBy(hospitalId)
+                .setAt(Instant.now())
+                .build();
+    }
+
+    private static ConflictException followUpAlreadyBooked(String id) {
+        return new ConflictException("The patient has already booked the follow-up for appointment '" + id
+                + "'; it can no longer be changed");
     }
 
     @Override
@@ -268,6 +347,8 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         // The cancelled token goes back to the pool; the next patient booking that day gets it.
         appointmentTokenGenerator.release(
                 booking.getHospitalId(), booking.getDoctorId(), booking.getAppointmentDateTime(), booking.getTokenNumber());
+        // A cancelled follow-up can be booked again.
+        unlinkFollowUp(booking);
         return doctorAppointmentBookingMapper.toResponse(saved);
     }
 
@@ -295,11 +376,28 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         if (booking.getAppointmentDateTime().isAfter(now)) {
             throw new IllegalArgumentException("Cannot mark an appointment " + request.getStatus() + " before its scheduled time");
         }
+        if (request.getFollowUp() != null) {
+            if (request.getStatus() != AppointmentStatus.COMPLETED) {
+                throw new IllegalArgumentException("followUp can only be given when marking an appointment COMPLETED");
+            }
+            booking.setFollowUp(buildFollowUp(booking, request.getFollowUp(), hospitalId));
+        }
 
         booking.setStatus(request.getStatus());
         booking.setUpdatedAt(now);
 
-        return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+        DoctorAppointmentBooking saved = doctorAppointmentBookingRepository.save(booking);
+        // A missed follow-up visit frees the instruction so the patient can book it again within the window.
+        if (request.getStatus() == AppointmentStatus.NO_SHOW) {
+            unlinkFollowUp(booking);
+        }
+        return doctorAppointmentBookingMapper.toResponse(saved);
+    }
+
+    private void unlinkFollowUp(DoctorAppointmentBooking booking) {
+        if (booking.getVisitType() == VisitType.FOLLOW_UP && booking.getPreviousAppointmentId() != null) {
+            followUpStore.unlink(booking.getPreviousAppointmentId(), booking.getId());
+        }
     }
 
     private DoctorAppointmentBooking findById(String id) {
@@ -345,6 +443,25 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         }
         if (previous.getStatus() != AppointmentStatus.COMPLETED) {
             throw new IllegalArgumentException("A follow-up must reference a COMPLETED appointment");
+        }
+        FollowUpInstruction followUp = previous.getFollowUp();
+        if (followUp == null || followUp.getDueDate() == null) {
+            throw new IllegalArgumentException("The hospital has not asked for a follow-up on appointment '" + previousId + "'");
+        }
+        if (!previous.getHospitalId().equals(request.getHospitalId()) || !previous.getDoctorId().equals(request.getDoctorId())) {
+            throw new IllegalArgumentException("A follow-up must be with the same doctor at the same hospital as appointment '"
+                    + previousId + "' (doctor '" + previous.getDoctorId() + "', hospital '" + previous.getHospitalId() + "')");
+        }
+        LocalDate due = LocalDate.parse(followUp.getDueDate());
+        LocalDate from = FollowUpInstruction.bookableFrom(due);
+        LocalDate until = FollowUpInstruction.bookableUntil(due);
+        LocalDate day = AppointmentTokenGenerator.localDay(request.getAppointmentDateTime());
+        if (day.isBefore(from) || day.isAfter(until)) {
+            throw new IllegalArgumentException("This follow-up is due on " + due + " and can be booked for a date from "
+                    + from + " to " + until);
+        }
+        if (followUp.getFollowUpBookingId() != null) {
+            throw new ConflictException("A follow-up for appointment '" + previousId + "' is already booked");
         }
     }
 

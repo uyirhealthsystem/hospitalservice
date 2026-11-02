@@ -105,6 +105,31 @@
       "key": "invoiceMonth",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "completedAppointmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "followUpAppointmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "followUpDate",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "followUpDateTime",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "outsideWindowDateTime",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -2876,7 +2901,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T10:00:00Z\",\n  \"durationMinutes\": 15,\n  \"consultationType\": \"IN_PERSON\",\n  \"visitType\": \"NEW\",\n  \"reason\": \"Routine checkup\",\n  \"symptoms\": [\n    \"Chest pain\",\n    \"Shortness of breath\"\n  ],\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\",\n  \"bookedFor\": \"SELF\"\n}",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-12-01T10:00:00Z\",\n  \"durationMinutes\": 15,\n  \"consultationType\": \"IN_PERSON\",\n  \"visitType\": \"NEW\",\n  \"reason\": \"Routine checkup\",\n  \"symptoms\": [\n    \"Chest pain\",\n    \"Shortness of breath\"\n  ],\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientEmail\": \"ravi.kumar@example.com\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\",\n  \"bookedFor\": \"SELF\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2895,7 +2920,7 @@
                 "doctor-appointments"
               ]
             },
-            "description": "Books an appointment as the patient. Required: hospitalId, doctorId, appointmentDateTime (future), patientName, patientPhone, patientAge (0-130), patientGender (MALE | FEMALE | OTHER). Optional: durationMinutes (5-120), consultationType (IN_PERSON default | TELECONSULT), visitType (NEW default | FOLLOW_UP + previousAppointmentId), reason, symptoms (≤20), bookedFor (SELF default | FAMILY_MEMBER + relationship).\n\nThe doctor must be active, associated with the hospital and sitting in one of its seats (Doctor Seats › Assign Doctor to Seat), and the slot must be free. The response carries tokenNumber — the doctor's queue number for that day. Captures {{appointmentBookingId}}."
+            "description": "Books an appointment as the patient. Required: hospitalId, doctorId, appointmentDateTime (future), patientName, patientPhone, patientAge (0-130), patientGender (MALE | FEMALE | OTHER). Optional: patientEmail (follow-up reminder emails go here), durationMinutes (5-120), consultationType (IN_PERSON default | TELECONSULT), visitType (NEW default | FOLLOW_UP + previousAppointmentId), reason, symptoms (≤20), bookedFor (SELF default | FAMILY_MEMBER + relationship).\n\nThe doctor must be active, associated with the hospital and sitting in one of its seats (Doctor Seats › Assign Doctor to Seat), and the slot must be free. The response carries tokenNumber — the doctor's queue number for that day. Captures {{appointmentBookingId}}."
           },
           "id": "b8487d39-eb44-46bf-a75d-96cff2d25c98"
         },
@@ -3411,6 +3436,878 @@
         }
       ],
       "id": "8bad0918-c4f6-42ba-ba41-c1677e160263"
+    },
+    {
+      "name": "Follow-up Visits",
+      "id": "a8c320bc-cf88-4aa3-8f19-599483fa430f",
+      "description": "The hospital decides whether a patient should come back. On a COMPLETED appointment it sets a follow-up (afterDays from the visit, or a date, plus instructions). The patient can then book one FOLLOW_UP appointment with the same doctor at the same hospital, dated from 3 days before to 7 days after the due date. Cancelling or a NO_SHOW frees it to be booked again. Reminder emails go to the booking's patientEmail 1-2 days before and on the due date.\n\nSet {{completedAppointmentId}} to a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}} (an appointment can only be marked COMPLETED after its time). Requests that need it skip themselves while it is empty; the validation and permission checks run regardless. [auto:follow-up]",
+      "item": [
+        {
+          "name": "Mark Completed with Follow-Up (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, or 400 if it is already closed', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                  "if (pm.response.code === 200) pm.test('follow-up set', () => pm.expect(pm.response.json().followUp.dueDate).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{completedAppointmentId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{completedAppointmentId}}",
+                "status"
+              ]
+            },
+            "description": "Closes the visit and asks the patient to come back in one call. followUp is only allowed with COMPLETED. 400 if the appointment is already COMPLETED/NO_SHOW/CANCELLED or still in the future - then use Set Follow-Up Instruction.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"COMPLETED\",\n  \"followUp\": {\n    \"afterDays\": 7,\n    \"instructions\": \"Review with fasting blood sugar report\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "f3bec922-f20f-40af-b1e6-7ef42c3253a4"
+        },
+        {
+          "name": "Set Follow-Up Instruction (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "const ist = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const day = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 7));",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('followUpDate', iso(day));",
+                  "pm.collectionVariables.set('followUpDateTime', iso(day) + 'T04:30:00Z');",
+                  "const far = new Date(day.getTime() + 30 * 86400000);",
+                  "pm.collectionVariables.set('outsideWindowDateTime', iso(far) + 'T04:30:00Z');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json().followUp;",
+                  "pm.test('due date stored', () => pm.expect(f.dueDate).to.eql(pm.collectionVariables.get('followUpDate')));",
+                  "pm.test('window is due-3 .. due+7', () => { pm.expect(f.bookableFrom).to.be.a('string'); pm.expect(f.bookableUntil).to.be.a('string'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{completedAppointmentId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{completedAppointmentId}}",
+                "follow-up"
+              ]
+            },
+            "description": "Sets or replaces the follow-up on a COMPLETED appointment. Exactly one of afterDays (1-365, from the visit date) or date (yyyy-MM-dd, not in the past). instructions optional (≤1000). 409 once the patient has booked it. Here: due 7 days from today.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{followUpDate}}\",\n  \"instructions\": \"Review with fasting blood sugar report\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "938bf35b-b9fc-423c-a94e-859c611c5671"
+        },
+        {
+          "name": "Set Follow-Up with afterDays and date (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{appointmentBookingId}}",
+                "follow-up"
+              ]
+            },
+            "description": "Give exactly one of afterDays or date. (Also 400 if the appointment is not COMPLETED.)\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"afterDays\": 7,\n  \"date\": \"2026-12-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "1c508561-1f17-41e1-8ac6-b8c6a70499db"
+        },
+        {
+          "name": "Set Follow-Up afterDays 0 (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{appointmentBookingId}}",
+                "follow-up"
+              ]
+            },
+            "description": "afterDays must be 1-365.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"afterDays\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "e105cf27-a340-44da-889a-fa7ff2f9ca7a"
+        },
+        {
+          "name": "Set Follow-Up as Patient (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{appointmentBookingId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{appointmentBookingId}}",
+                "follow-up"
+              ]
+            },
+            "description": "Only the hospital gives follow-up instructions.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"afterDays\": 7\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "97234b17-9050-482f-8e2f-fb0259fc844a"
+        },
+        {
+          "name": "See Follow-Up on Appointment (Patient)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('follow-up visible to patient', () => pm.expect(pm.response.json().appointment.followUp).to.be.an('object'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{completedAppointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{completedAppointmentId}}"
+              ]
+            },
+            "description": "The patient sees dueDate, instructions and the bookable window on the appointment.\n\n[auto:follow-up]"
+          },
+          "id": "fbb994b5-6f13-48a4-abb4-994ac233548b"
+        },
+        {
+          "name": "Book Follow-Up Outside Window (expect 400)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "const ist = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const day = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 7));",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('followUpDate', iso(day));",
+                  "pm.collectionVariables.set('followUpDateTime', iso(day) + 'T04:30:00Z');",
+                  "const far = new Date(day.getTime() + 30 * 86400000);",
+                  "pm.collectionVariables.set('outsideWindowDateTime', iso(far) + 'T04:30:00Z');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('names the window', () => pm.expect(pm.response.text()).to.include('can be booked for a date from'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments"
+              ]
+            },
+            "description": "A follow-up must be dated from 3 days before to 7 days after the due date.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"{{outsideWindowDateTime}}\",\n  \"visitType\": \"FOLLOW_UP\",\n  \"previousAppointmentId\": \"{{completedAppointmentId}}\",\n  \"reason\": \"Follow-up as advised\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientEmail\": \"ravi.kumar@example.com\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "2de043d5-821d-46cc-bb6f-f3b985ef51a2"
+        },
+        {
+          "name": "Book Follow-Up Appointment (Patient)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "const ist = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const day = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 7));",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('followUpDate', iso(day));",
+                  "pm.collectionVariables.set('followUpDateTime', iso(day) + 'T04:30:00Z');",
+                  "const far = new Date(day.getTime() + 30 * 86400000);",
+                  "pm.collectionVariables.set('outsideWindowDateTime', iso(far) + 'T04:30:00Z');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('followUpAppointmentId', body.id);",
+                  "    pm.test('is a FOLLOW_UP', () => pm.expect(body.visitType).to.eql('FOLLOW_UP'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments"
+              ]
+            },
+            "description": "visitType FOLLOW_UP + previousAppointmentId. Same doctor and hospital as the previous visit, inside the window, one per instruction. Takes a token and the normal commission. patientEmail is where reminders go. Captures {{followUpAppointmentId}}.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"{{followUpDateTime}}\",\n  \"visitType\": \"FOLLOW_UP\",\n  \"previousAppointmentId\": \"{{completedAppointmentId}}\",\n  \"reason\": \"Follow-up as advised\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientEmail\": \"ravi.kumar@example.com\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "0966099b-8cf4-4225-b329-68678498078e"
+        },
+        {
+          "name": "Book Follow-Up Twice (expect 409)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "if (!pm.collectionVariables.get('followUpAppointmentId')) pm.execution.skipRequest();",
+                  "const ist = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const day = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 7));",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('followUpDate', iso(day));",
+                  "pm.collectionVariables.set('followUpDateTime', iso(day) + 'T04:30:00Z');",
+                  "const far = new Date(day.getTime() + 30 * 86400000);",
+                  "pm.collectionVariables.set('outsideWindowDateTime', iso(far) + 'T04:30:00Z');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments"
+              ]
+            },
+            "description": "Only one follow-up per instruction while it is booked.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"{{followUpDateTime}}\",\n  \"visitType\": \"FOLLOW_UP\",\n  \"previousAppointmentId\": \"{{completedAppointmentId}}\",\n  \"reason\": \"Follow-up as advised\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientEmail\": \"ravi.kumar@example.com\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "3adabba8-0d97-44e6-8a66-f94e1391d5ac"
+        },
+        {
+          "name": "Change Follow-Up After Booking (expect 409)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "if (!pm.collectionVariables.get('followUpAppointmentId')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{completedAppointmentId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{completedAppointmentId}}",
+                "follow-up"
+              ]
+            },
+            "description": "The instruction is locked once the patient has booked the follow-up.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"afterDays\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "1ad7e095-dcb4-4e79-b169-39d510e92a7b"
+        },
+        {
+          "name": "Cancel Follow-Up Appointment (Patient)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "if (!pm.collectionVariables.get('followUpAppointmentId')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('followUpAppointmentId', '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{followUpAppointmentId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{followUpAppointmentId}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancelling frees the follow-up so it can be booked again within the window.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Will come next week\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "0db4c60b-4add-4283-ba0e-5c139f885c83"
+        },
+        {
+          "name": "Remove Follow-Up Instruction (Hospital)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('removed', () => pm.expect(pm.response.json().followUp).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments/{{completedAppointmentId}}/follow-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments",
+                "{{completedAppointmentId}}",
+                "follow-up"
+              ]
+            },
+            "description": "No follow-up needed after all. 404 if none was set; 409 if the patient has booked it.\n\n[auto:follow-up]"
+          },
+          "id": "e3fab907-4a0e-4f1e-8da6-96385c3dbb4e"
+        },
+        {
+          "name": "Book Follow-Up Without Instruction (expect 400)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('completedAppointmentId')) {",
+                  "    console.log('Set completedAppointmentId (a past appointment of {{patientId}} with {{doctorId}} at {{hospitalId}}) to run this - skipping.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "const ist = new Date(Date.now() + 5.5 * 3600 * 1000);",
+                  "const day = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 7));",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('followUpDate', iso(day));",
+                  "pm.collectionVariables.set('followUpDateTime', iso(day) + 'T04:30:00Z');",
+                  "const far = new Date(day.getTime() + 30 * 86400000);",
+                  "pm.collectionVariables.set('outsideWindowDateTime', iso(far) + 'T04:30:00Z');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('explains why', () => pm.expect(pm.response.text()).to.include('has not asked for a follow-up'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{patientId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "PATIENT"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/doctor-appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "doctor-appointments"
+              ]
+            },
+            "description": "A patient can only book a follow-up the hospital asked for.\n\n[auto:follow-up]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"{{followUpDateTime}}\",\n  \"visitType\": \"FOLLOW_UP\",\n  \"previousAppointmentId\": \"{{completedAppointmentId}}\",\n  \"reason\": \"Follow-up as advised\",\n  \"patientName\": \"Ravi Kumar\",\n  \"patientPhone\": \"+91-9876543219\",\n  \"patientEmail\": \"ravi.kumar@example.com\",\n  \"patientAge\": 45,\n  \"patientGender\": \"MALE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "id": "2054a9bc-e7eb-41b6-b4cb-8d7b654d2186"
+        }
+      ]
     },
     {
       "name": "Patient Activity",

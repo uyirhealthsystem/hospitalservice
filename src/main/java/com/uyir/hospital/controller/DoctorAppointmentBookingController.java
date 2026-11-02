@@ -4,6 +4,7 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.FollowUpRequest;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
@@ -19,7 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -107,5 +110,21 @@ public class DoctorAppointmentBookingController {
             @PathVariable String id, @Valid @RequestBody UpdateAppointmentStatusRequest request) {
         String hospitalId = currentUserContext.requireHospitalId();
         return doctorAppointmentBookingService.updateStatus(id, hospitalId, request);
+    }
+
+    // Hospital-only: ask the patient of a COMPLETED appointment to come back for a follow-up, or change
+    // that instruction. Locked once the patient has booked the follow-up (409).
+    @PutMapping("/{id}/follow-up")
+    public DoctorAppointmentBookingResponse setFollowUp(
+            @PathVariable String id, @Valid @RequestBody FollowUpRequest request) {
+        String hospitalId = currentUserContext.requireHospitalId();
+        return doctorAppointmentBookingService.setFollowUp(id, hospitalId, request);
+    }
+
+    // Hospital-only: the follow-up is no longer needed.
+    @DeleteMapping("/{id}/follow-up")
+    public DoctorAppointmentBookingResponse removeFollowUp(@PathVariable String id) {
+        String hospitalId = currentUserContext.requireHospitalId();
+        return doctorAppointmentBookingService.removeFollowUp(id, hospitalId);
     }
 }

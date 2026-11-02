@@ -1,7 +1,10 @@
 package com.uyir.hospital.mapper;
 
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.FollowUpResponse;
 import com.uyir.hospital.model.DoctorAppointmentBooking;
+import com.uyir.hospital.model.embedded.FollowUpInstruction;
+import java.time.LocalDate;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -31,8 +34,25 @@ public class DoctorAppointmentBookingMapper {
                 .cancellationReason(booking.getCancellationReason())
                 .cancelledBy(booking.getCancelledBy())
                 .cancelledAt(booking.getCancelledAt())
+                .patientEmail(booking.getPatientEmail())
+                .followUp(toFollowUpResponse(booking.getFollowUp()))
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
+                .build();
+    }
+
+    private static FollowUpResponse toFollowUpResponse(FollowUpInstruction followUp) {
+        if (followUp == null || followUp.getDueDate() == null) {
+            return null;
+        }
+        LocalDate due = LocalDate.parse(followUp.getDueDate());
+        return FollowUpResponse.builder()
+                .dueDate(due)
+                .instructions(followUp.getInstructions())
+                .bookableFrom(FollowUpInstruction.bookableFrom(due))
+                .bookableUntil(FollowUpInstruction.bookableUntil(due))
+                .followUpBookingId(followUp.getFollowUpBookingId())
+                .setAt(followUp.getSetAt())
                 .build();
     }
 }

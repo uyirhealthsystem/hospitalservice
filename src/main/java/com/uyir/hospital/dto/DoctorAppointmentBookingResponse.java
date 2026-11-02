@@ -42,6 +42,9 @@ public class DoctorAppointmentBookingResponse {
     private String cancellationReason;
     private CancelledBy cancelledBy;
     private Instant cancelledAt;
+    private String patientEmail;
+    // The hospital's follow-up instruction; null when none was given.
+    private FollowUpResponse followUp;
     private Instant createdAt;
     private Instant updatedAt;
 }

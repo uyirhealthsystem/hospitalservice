@@ -139,6 +139,72 @@ class DoctorAppointmentBookingControllerTest {
     }
 
     @Test
+    void setFollowUp_asHospital_returnsBookingWithFollowUp() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        DoctorAppointmentBookingResponse completed = response("a1", AppointmentStatus.COMPLETED);
+        completed.setFollowUp(com.uyir.hospital.dto.FollowUpResponse.builder()
+                .dueDate(java.time.LocalDate.of(2026, 11, 12))
+                .bookableFrom(java.time.LocalDate.of(2026, 11, 9))
+                .bookableUntil(java.time.LocalDate.of(2026, 11, 19))
+                .instructions("Review with reports")
+                .build());
+        when(doctorAppointmentBookingService.setFollowUp(eq("a1"), eq("h1"), any(com.uyir.hospital.dto.FollowUpRequest.class)))
+                .thenReturn(completed);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/hospital/doctor-appointments/a1/follow-up")
+                        .contentType("application/json")
+                        .content("{\"afterDays\": 7, \"instructions\": \"Review with reports\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.followUp.dueDate").value("2026-11-12"))
+                .andExpect(jsonPath("$.followUp.bookableUntil").value("2026-11-19"));
+    }
+
+    @Test
+    void setFollowUp_afterDaysOutOfRange_returns400() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/hospital/doctor-appointments/a1/follow-up")
+                        .contentType("application/json")
+                        .content("{\"afterDays\": 0}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void setFollowUp_asPatient_returns403() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenThrow(new ForbiddenException("nope"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/hospital/doctor-appointments/a1/follow-up")
+                        .contentType("application/json")
+                        .content("{\"afterDays\": 7}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void removeFollowUp_asHospital_returns200() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(doctorAppointmentBookingService.removeFollowUp("a1", "h1")).thenReturn(response("a1", AppointmentStatus.COMPLETED));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/v1/hospital/doctor-appointments/a1/follow-up"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("a1"));
+    }
+
+    @Test
+    void create_invalidPatientEmail_returns400() throws Exception {
+        DoctorAppointmentBookingRequest request = validRequest();
+        request.setPatientEmail("not-an-email");
+
+        mockMvc.perform(post("/api/v1/hospital/doctor-appointments")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void getMyBookings_asHospital_returnsOwnBookings() throws Exception {
         when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(doctorAppointmentBookingService.getByHospitalId("h1"))

@@ -655,6 +655,70 @@ Response:
 
 ---
 
+# Follow-up Visits
+
+The hospital decides whether a patient should come back and when. The patient can book a `FOLLOW_UP` appointment only when the hospital asked for one.
+
+## Hospital: give the instruction (HOSPITAL)
+
+On a `COMPLETED` appointment, either while marking it completed:
+
+```http
+PATCH /api/v1/hospital/doctor-appointments/{id}/status
+{ "status": "COMPLETED", "followUp": { "afterDays": 7, "instructions": "Review with fasting blood sugar report" } }
+```
+
+or any time later. The same call changes it:
+
+```http
+PUT /api/v1/hospital/doctor-appointments/{id}/follow-up
+{ "date": "2026-11-12", "instructions": "Review with fasting blood sugar report" }
+```
+
+- Give **exactly one** of `afterDays` (1–365, counted from the visit's date) or `date` (yyyy-MM-dd). The due date must be after the visit and not in the past. `instructions` is optional, up to 1000 chars.
+- `followUp` on the status call is only allowed with `COMPLETED` (`400` otherwise).
+- `DELETE /api/v1/hospital/doctor-appointments/{id}/follow-up` removes it.
+- Once the patient has booked the follow-up, the instruction is locked: `PUT`/`DELETE` return `409`.
+
+Every appointment response carries:
+
+```json
+"followUp": { "dueDate": "2026-11-12", "instructions": "Review with ...", "bookableFrom": "2026-11-09",
+              "bookableUntil": "2026-11-19", "followUpBookingId": null, "setAt": "2026-11-05T10:00:00Z" }
+```
+
+`followUp` is `null` when no follow-up was asked for.
+
+## Patient: book it
+
+`POST /api/v1/hospital/doctor-appointments` with `"visitType": "FOLLOW_UP", "previousAppointmentId": "<the completed visit>"`. Checks:
+
+| Rule | Error |
+|---|---|
+| The previous visit is the patient's own and `COMPLETED` | `403` / `400` |
+| The hospital asked for a follow-up on it | `400` |
+| Same doctor and same hospital as the previous visit | `400` |
+| Appointment date (IST) between `bookableFrom` (due − 3 days) and `bookableUntil` (due + 7 days) | `400` naming the window |
+| Not already booked (one follow-up per instruction) | `409` |
+
+A follow-up otherwise books like any appointment: slot check, token limit, and the ₹20 commission. If the follow-up booking is **cancelled** or marked **NO_SHOW**, the instruction frees up and the patient can book again within the window.
+
+## Reminder emails
+
+Optional `patientEmail` on the booking request is where reminders go; the app should pre-fill it from the patient's profile. For a follow-up not yet booked, hospitalservice publishes `FollowUpReminderDue` (v1) on `hospital.events` once when it is 1–2 days away (`reminderType: UPCOMING`) and once on the due date (`DUE_TODAY`). notification-service emails the patient. The job runs hourly from 09:00 to 20:00 IST, and each reminder is sent once across all replicas. No `patientEmail` means no reminders.
+
+```json
+{ "eventType": "FollowUpReminderDue", "eventVersion": 1, "occurredAt": "...",
+  "data": { "appointmentId": "...", "reminderType": "UPCOMING", "patientId": "...", "patientName": "...",
+            "patientEmail": "...", "hospitalId": "...", "hospitalName": "...", "hospitalPhone": "...",
+            "doctorId": "...", "doctorName": "...", "dueDate": "2026-11-12", "bookableFrom": "2026-11-09",
+            "bookableUntil": "2026-11-19", "instructions": "..." } }
+```
+
+Config: `FOLLOW_UP_REMINDERS_ENABLED` (default `true`), `hospital.follow-up.reminder-cron`.
+
+---
+
 # Commission Billing (monthly invoice)
 
 Uyir charges each hospital a commission per **doctor appointment**, billed once a month. **Emergency bookings are never charged.**

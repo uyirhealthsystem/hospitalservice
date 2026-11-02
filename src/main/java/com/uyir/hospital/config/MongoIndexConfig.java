@@ -74,6 +74,10 @@ public class MongoIndexConfig {
 
         // Monthly commission invoicing scans one month of appointments across all hospitals.
         appointmentBookingIndexOps.ensureIndex(new Index().on("appointmentDateTime", Direction.ASC));
+        // Hourly follow-up reminder scan. Partial: only appointments with a follow-up instruction.
+        appointmentBookingIndexOps.ensureIndex(new Index()
+                .on("followUp.dueDate", Direction.ASC)
+                .partial(PartialIndexFilter.of(Criteria.where("followUp.dueDate").exists(true))));
 
         IndexOperations tokenClaimIndexOps = mongoTemplate.indexOps(AppointmentTokenClaim.class);
         tokenClaimIndexOps.ensureIndex(
