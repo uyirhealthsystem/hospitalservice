@@ -613,6 +613,48 @@ Config: `KAFKA_BROKERS`, plus `HOSPITAL_EVENTS_PROVIDER` (`kafka` by default; `l
 
 ---
 
+# Appointment Token Limits
+
+The hospital decides how many appointment tokens it issues for each of its seated doctors per day. Patients can book only until those tokens run out. **Emergency bookings are not affected.**
+
+- **Daily limit:** applies every day.
+- **Date limit:** overrides the daily limit on one date (Asia/Kolkata day). Set `0` when the doctor takes no appointments that day, e.g. leave.
+- **No limit set** (no record, or `dailyLimit: null` with no date limit): booking is unlimited, as before.
+- **Token numbers** run `1..limit` per hospital, per doctor, per day. A patient gets the **lowest free number**. Cancelling an appointment, or rescheduling it to another day, frees its token for the next patient. Rescheduling within the same day keeps the token.
+- **Full:** `POST /doctor-appointments` returns `409` (`All 30 appointment tokens for doctor 'd1' on 2026-11-05 are booked`, or `... is not taking appointments on ...` for a `0` limit). A reschedule to a full day also returns `409` and keeps the old token.
+- Lowering a limit below what is already booked doesn't cancel existing appointments; it just stops new bookings for that day.
+
+## Manage limits (HOSPITAL)
+
+| Endpoint | Body | Notes |
+|---|---|---|
+| `GET /api/v1/hospital/token-limits` | – | This hospital's limits, one entry per doctor |
+| `PUT /api/v1/hospital/token-limits/{doctorId}` | `{ "dailyLimit": 30 }` | 1–1000; `null` removes the limit. The doctor must hold a seat here (else `400`) |
+| `PUT /api/v1/hospital/token-limits/{doctorId}/dates/{yyyy-MM-dd}` | `{ "limit": 10 }` | 0–1000; today or later (else `400`) |
+| `DELETE /api/v1/hospital/token-limits/{doctorId}/dates/{yyyy-MM-dd}` | – | Falls back to the daily limit; `404` if no date limit was set |
+
+Response:
+
+```json
+{ "hospitalId": "h1", "doctorId": "d1", "dailyLimit": 30,
+  "dateLimits": { "2026-11-05": 10, "2026-11-08": 0 }, "updatedAt": "2026-11-02T09:00:00Z" }
+```
+
+`dateLimits` lists only today and later.
+
+## Check availability before booking (any caller)
+
+`GET /api/v1/hospital/doctor-appointments/availability?hospitalId=h1&doctorId=d1&date=2026-11-05`
+
+```json
+{ "hospitalId": "h1", "doctorId": "d1", "date": "2026-11-05",
+  "tokenLimit": 30, "bookedTokens": 18, "remainingTokens": 12, "available": true }
+```
+
+`tokenLimit` and `remainingTokens` are `null` when no limit is set (`available` is then `true`).
+
+---
+
 # Hospital Analytics API Reference
 
 Base URL: `/api/v1/hospital/analytics` (contains `hospital` per the project convention)

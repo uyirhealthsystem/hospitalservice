@@ -5,6 +5,7 @@ import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 
@@ -13,6 +14,13 @@ public interface EmergencyBookingRepository extends MongoRepository<EmergencyBoo
     List<EmergencyBooking> findByHospitalIdOrderByRequestedAtDesc(String hospitalId);
 
     List<EmergencyBooking> findByPatientIdOrderByRequestedAtDesc(String patientId);
+
+    // Patient activity timeline: a window of the patient's bookings plus the counts for its summary.
+    List<EmergencyBooking> findByPatientId(String patientId, Pageable pageable);
+
+    long countByPatientId(String patientId);
+
+    long countByPatientIdAndStatusIn(String patientId, Collection<EmergencyBookingStatus> statuses);
 
     // Half-open [from, to) so consecutive day/period windows never double-count a booking.
     @Query("{ 'hospitalId': { $in: ?0 }, 'requestedAt': { $gte: ?1, $lt: ?2 } }")

@@ -11,12 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.exception.ForbiddenException;
+import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.Sex;
 import com.uyir.hospital.security.CurrentUserContext;
@@ -98,6 +100,45 @@ class DoctorAppointmentBookingControllerTest {
     }
 
     @Test
+    void create_tokensFull_returns409() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+        when(doctorAppointmentBookingService.create(eq("p1"), any(DoctorAppointmentBookingRequest.class)))
+                .thenThrow(new com.uyir.hospital.exception.ConflictException("All 30 appointment tokens are booked"));
+
+        mockMvc.perform(post("/api/v1/hospital/doctor-appointments")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void getAvailability_returnsRemainingTokens() throws Exception {
+        java.time.LocalDate day = java.time.LocalDate.of(2026, 11, 5);
+        when(doctorAppointmentBookingService.getAvailability("h1", "d1", day))
+                .thenReturn(com.uyir.hospital.dto.TokenAvailabilityResponse.builder()
+                        .hospitalId("h1").doctorId("d1").date(day)
+                        .tokenLimit(30).bookedTokens(18).remainingTokens(12).available(true)
+                        .build());
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/availability")
+                        .param("hospitalId", "h1")
+                        .param("doctorId", "d1")
+                        .param("date", "2026-11-05"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tokenLimit").value(30))
+                .andExpect(jsonPath("$.remainingTokens").value(12))
+                .andExpect(jsonPath("$.available").value(true));
+    }
+
+    @Test
+    void getAvailability_missingDate_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/availability")
+                        .param("hospitalId", "h1")
+                        .param("doctorId", "d1"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void getMyBookings_asHospital_returnsOwnBookings() throws Exception {
         when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(doctorAppointmentBookingService.getByHospitalId("h1"))
@@ -117,6 +158,54 @@ class DoctorAppointmentBookingControllerTest {
         mockMvc.perform(get("/api/v1/hospital/doctor-appointments/history"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("a1"));
+    }
+
+    @Test
+    void getMyAppointment_asPatient_returnsDetailWithHospitalAndDoctor() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+        when(doctorAppointmentBookingService.getDetailForPatient("a1", "p1"))
+                .thenReturn(AppointmentDetailResponse.builder()
+                        .appointment(response("a1", AppointmentStatus.CONFIRMED))
+                        .hospital(AppointmentDetailResponse.HospitalInfo.builder().id("h1").hospitalName("City Hospital").build())
+                        .doctor(AppointmentDetailResponse.DoctorInfo.builder().id("d1").name("Dr. Priya").build())
+                        .cancellable(true)
+                        .build());
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/a1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.appointment.id").value("a1"))
+                .andExpect(jsonPath("$.hospital.hospitalName").value("City Hospital"))
+                .andExpect(jsonPath("$.doctor.name").value("Dr. Priya"))
+                .andExpect(jsonPath("$.cancellable").value(true));
+    }
+
+    @Test
+    void getMyAppointment_someoneElsesAppointment_returns403() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p2");
+        when(doctorAppointmentBookingService.getDetailForPatient("a1", "p2"))
+                .thenThrow(new ForbiddenException("Appointment booking 'a1' does not belong to patient 'p2'"));
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/a1"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getMyAppointment_unknownId_returns404() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+        when(doctorAppointmentBookingService.getDetailForPatient("nope", "p1"))
+                .thenThrow(new ResourceNotFoundException("Appointment booking not found with id 'nope'"));
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/nope"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMyAppointment_notPatientRole_returns403() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT))
+                .thenThrow(new ForbiddenException("This action requires the 'PATIENT' role"));
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/a1"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

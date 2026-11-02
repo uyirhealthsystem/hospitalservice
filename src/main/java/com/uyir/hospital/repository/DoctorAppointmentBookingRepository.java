@@ -5,6 +5,7 @@ import com.uyir.hospital.model.enums.AppointmentStatus;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 
@@ -13,6 +14,16 @@ public interface DoctorAppointmentBookingRepository extends MongoRepository<Doct
     List<DoctorAppointmentBooking> findByHospitalIdOrderByAppointmentDateTimeAsc(String hospitalId);
 
     List<DoctorAppointmentBooking> findByPatientIdOrderByAppointmentDateTimeDesc(String patientId);
+
+    // Patient activity timeline: a window of the patient's bookings plus the counts for its summary.
+    List<DoctorAppointmentBooking> findByPatientId(String patientId, Pageable pageable);
+
+    long countByPatientId(String patientId);
+
+    long countByPatientIdAndStatusIn(String patientId, Collection<AppointmentStatus> statuses);
+
+    long countByPatientIdAndStatusInAndAppointmentDateTimeAfter(
+            String patientId, Collection<AppointmentStatus> statuses, Instant from);
 
     // Candidates for a slot clash: the caller narrows by each booking's own end time.
     @Query("{ 'doctorId': ?0, 'status': { $in: ?1 }, 'appointmentDateTime': { $gte: ?2, $lt: ?3 } }")

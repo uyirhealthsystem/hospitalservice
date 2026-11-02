@@ -1,9 +1,11 @@
 package com.uyir.hospital.controller;
 
+import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
+import com.uyir.hospital.dto.TokenAvailabilityResponse;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
@@ -11,9 +13,12 @@ import com.uyir.hospital.service.DoctorAppointmentBookingService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -52,11 +57,28 @@ public class DoctorAppointmentBookingController {
         return doctorAppointmentBookingService.getByHospitalId(hospitalId);
     }
 
+    // Any caller: how many appointment tokens the hospital issued for this doctor on the date and how
+    // many are left, so the app can show "12 of 30 left" or "full" before the patient books.
+    @GetMapping("/availability")
+    public TokenAvailabilityResponse getAvailability(
+            @RequestParam String hospitalId,
+            @RequestParam String doctorId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return doctorAppointmentBookingService.getAvailability(hospitalId, doctorId, date);
+    }
+
     // Patient-only: the logged-in patient's own appointment booking history.
     @GetMapping("/history")
     public List<DoctorAppointmentBookingResponse> getMyHistory() {
         String patientId = currentUserContext.requireRole(Role.PATIENT);
         return doctorAppointmentBookingService.getByPatientId(patientId);
+    }
+
+    // Patient-only: one of the logged-in patient's own appointments, with the hospital and doctor details.
+    @GetMapping("/{id}")
+    public AppointmentDetailResponse getMyAppointment(@PathVariable String id) {
+        String patientId = currentUserContext.requireRole(Role.PATIENT);
+        return doctorAppointmentBookingService.getDetailForPatient(id, patientId);
     }
 
     // Hospital-only: appointment bookings can be rescheduled; emergency bookings cannot.

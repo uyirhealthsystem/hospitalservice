@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
@@ -22,6 +23,8 @@ import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.DoctorAppointmentBookingMapper;
 import com.uyir.hospital.model.Doctor;
 import com.uyir.hospital.model.DoctorAppointmentBooking;
+import com.uyir.hospital.model.Hospital;
+import com.uyir.hospital.model.embedded.Address;
 import com.uyir.hospital.model.embedded.HospitalAssociation;
 import com.uyir.hospital.model.enums.AppointmentStatus;
 import com.uyir.hospital.model.enums.BookedFor;
@@ -33,7 +36,11 @@ import com.uyir.hospital.model.enums.VisitType;
 import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
 import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.dto.TokenAvailabilityResponse;
+import com.uyir.hospital.exception.ConflictException;
+import com.uyir.hospital.service.DoctorTokenLimitService;
 import com.uyir.hospital.service.HospitalSeatService;
+import java.util.Set;
 import com.uyir.hospital.security.Role;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -64,6 +71,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private HospitalSeatService hospitalSeatService;
 
+    @Mock
+    private DoctorTokenLimitService doctorTokenLimitService;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -74,9 +84,11 @@ class DoctorAppointmentBookingServiceImplTest {
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
                 doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator,
-                hospitalSeatService);
+                hospitalSeatService, doctorTokenLimitService);
         // Every doctor holds a seat unless a test says otherwise.
         lenient().when(hospitalSeatService.hasSeat(anyString(), anyString())).thenReturn(true);
+        // No token limit unless a test sets one (Mockito would otherwise return 0 for an Integer).
+        lenient().when(doctorTokenLimitService.limitFor(anyString(), anyString(), any(LocalDate.class))).thenReturn(null);
     }
 
     private DoctorAppointmentBookingRequest validRequest() {
@@ -134,7 +146,7 @@ class DoctorAppointmentBookingServiceImplTest {
     void create_assignsTokenFromGenerator() {
         when(hospitalRepository.existsById("h1")).thenReturn(true);
         when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
-        when(appointmentTokenGenerator.nextToken("d1", future)).thenReturn(7);
+        when(appointmentTokenGenerator.claim("h1", "d1", future, null)).thenReturn(7);
         when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -154,7 +166,7 @@ class DoctorAppointmentBookingServiceImplTest {
                         .build()));
 
         assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(DuplicateResourceException.class);
-        verify(appointmentTokenGenerator, never()).nextToken(any(), any());
+        verify(appointmentTokenGenerator, never()).claim(any(), any(), any(), any());
     }
 
     @Test
@@ -182,7 +194,7 @@ class DoctorAppointmentBookingServiceImplTest {
                         .build());
 
         assertThat(response.getTokenNumber()).isEqualTo(4);
-        verify(appointmentTokenGenerator, never()).nextToken(any(), any());
+        verify(appointmentTokenGenerator, never()).claim(any(), any(), any(), any());
     }
 
     @Test
@@ -197,7 +209,7 @@ class DoctorAppointmentBookingServiceImplTest {
                 .build();
         Instant nextDay = future.plus(1, ChronoUnit.DAYS);
         when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
-        when(appointmentTokenGenerator.nextToken("d1", nextDay)).thenReturn(12);
+        when(appointmentTokenGenerator.claim("h1", "d1", nextDay, null)).thenReturn(12);
         when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -205,6 +217,124 @@ class DoctorAppointmentBookingServiceImplTest {
                 "a1", "h1", RescheduleAppointmentRequest.builder().appointmentDateTime(nextDay).build());
 
         assertThat(response.getTokenNumber()).isEqualTo(12);
+        // The old day's token is freed for the next patient.
+        verify(appointmentTokenGenerator).release("h1", "d1", future, 4);
+    }
+
+    @Test
+    void create_passesHospitalLimitForThatDayToGenerator() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(doctorTokenLimitService.limitFor("h1", "d1", AppointmentTokenGenerator.localDay(future))).thenReturn(30);
+        when(appointmentTokenGenerator.claim("h1", "d1", future, 30)).thenReturn(3);
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.create("p1", validRequest()).getTokenNumber()).isEqualTo(3);
+    }
+
+    @Test
+    void create_tokensFull_throwsConflictAndSavesNothing() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(doctorTokenLimitService.limitFor(eq("h1"), eq("d1"), any(LocalDate.class))).thenReturn(30);
+        when(appointmentTokenGenerator.claim("h1", "d1", future, 30))
+                .thenThrow(new ConflictException("All 30 appointment tokens are booked"));
+
+        assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(ConflictException.class);
+        verify(doctorAppointmentBookingRepository, never()).save(any());
+    }
+
+    @Test
+    void create_saveFails_releasesClaimedToken() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(appointmentTokenGenerator.claim("h1", "d1", future, null)).thenReturn(5);
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenThrow(new IllegalStateException("db down"));
+
+        assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(IllegalStateException.class);
+        verify(appointmentTokenGenerator).release("h1", "d1", future, 5);
+    }
+
+    @Test
+    void reschedule_toFullDay_throwsConflictAndKeepsOldToken() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1")
+                .hospitalId("h1")
+                .doctorId("d1")
+                .appointmentDateTime(future)
+                .tokenNumber(4)
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+        Instant nextDay = future.plus(1, ChronoUnit.DAYS);
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(appointmentTokenGenerator.claim("h1", "d1", nextDay, null))
+                .thenThrow(new ConflictException("full"));
+
+        assertThatThrownBy(() -> service.reschedule(
+                        "a1", "h1", RescheduleAppointmentRequest.builder().appointmentDateTime(nextDay).build()))
+                .isInstanceOf(ConflictException.class);
+        verify(appointmentTokenGenerator, never()).release(any(), any(), any(), any());
+        verify(doctorAppointmentBookingRepository, never()).save(any());
+    }
+
+    @Test
+    void cancel_releasesToken() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1")
+                .patientId("p1")
+                .hospitalId("h1")
+                .doctorId("d1")
+                .appointmentDateTime(future)
+                .tokenNumber(9)
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(doctorAppointmentBookingRepository.save(any(DoctorAppointmentBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.cancel("a1", "p1", Role.PATIENT, CancelAppointmentRequest.builder().reason("Better").build());
+
+        verify(appointmentTokenGenerator).release("h1", "d1", future, 9);
+    }
+
+    @Test
+    void getAvailability_withLimit_reportsRemaining() {
+        LocalDate day = LocalDate.of(2026, 11, 5);
+        when(doctorTokenLimitService.limitFor("h1", "d1", day)).thenReturn(30);
+        when(appointmentTokenGenerator.takenTokens("h1", "d1", day)).thenReturn(Set.of(1, 2, 3));
+
+        TokenAvailabilityResponse response = service.getAvailability("h1", "d1", day);
+
+        assertThat(response.getTokenLimit()).isEqualTo(30);
+        assertThat(response.getBookedTokens()).isEqualTo(3);
+        assertThat(response.getRemainingTokens()).isEqualTo(27);
+        assertThat(response.isAvailable()).isTrue();
+    }
+
+    @Test
+    void getAvailability_noLimit_isUnlimited() {
+        LocalDate day = LocalDate.of(2026, 11, 5);
+        when(appointmentTokenGenerator.takenTokens("h1", "d1", day)).thenReturn(Set.of(1));
+
+        TokenAvailabilityResponse response = service.getAvailability("h1", "d1", day);
+
+        assertThat(response.getTokenLimit()).isNull();
+        assertThat(response.getRemainingTokens()).isNull();
+        assertThat(response.isAvailable()).isTrue();
+    }
+
+    @Test
+    void getAvailability_zeroLimit_notAvailable() {
+        LocalDate day = LocalDate.of(2026, 11, 5);
+        when(doctorTokenLimitService.limitFor("h1", "d1", day)).thenReturn(0);
+        when(appointmentTokenGenerator.takenTokens("h1", "d1", day)).thenReturn(Set.of());
+
+        TokenAvailabilityResponse response = service.getAvailability("h1", "d1", day);
+
+        assertThat(response.getRemainingTokens()).isZero();
+        assertThat(response.isAvailable()).isFalse();
     }
 
     @Test
@@ -570,5 +700,64 @@ class DoctorAppointmentBookingServiceImplTest {
         assertThatThrownBy(() -> service.reschedule(
                         "a1", "h1", RescheduleAppointmentRequest.builder().appointmentDateTime(future).build()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getDetailForPatient_ownAppointment_includesHospitalAndDoctor() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1").patientId("p1").hospitalId("h1").doctorId("d1")
+                .appointmentDateTime(future).status(AppointmentStatus.CONFIRMED).build();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        Hospital hospital = new Hospital();
+        hospital.setId("h1");
+        hospital.setHospitalName("City Hospital");
+        hospital.setAddress(Address.builder().city("Chennai").build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        Doctor doctor = new Doctor();
+        doctor.setId("d1");
+        doctor.setName("Dr. Priya");
+        doctor.setSpecialties(List.of("Cardiology"));
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(doctor));
+
+        AppointmentDetailResponse detail = service.getDetailForPatient("a1", "p1");
+
+        assertThat(detail.getAppointment().getId()).isEqualTo("a1");
+        assertThat(detail.getHospital().getHospitalName()).isEqualTo("City Hospital");
+        assertThat(detail.getHospital().getAddress().getCity()).isEqualTo("Chennai");
+        assertThat(detail.getDoctor().getName()).isEqualTo("Dr. Priya");
+        assertThat(detail.getDoctor().getSpecialties()).containsExactly("Cardiology");
+        assertThat(detail.isCancellable()).isTrue();
+    }
+
+    @Test
+    void getDetailForPatient_closedAppointmentWithDeletedDoctor_isNotCancellableAndDoctorNull() {
+        DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
+                .id("a1").patientId("p1").hospitalId("h1").doctorId("d1")
+                .appointmentDateTime(future).status(AppointmentStatus.COMPLETED).build();
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(booking));
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.empty());
+        when(doctorRepository.findById("d1")).thenReturn(Optional.empty());
+
+        AppointmentDetailResponse detail = service.getDetailForPatient("a1", "p1");
+
+        assertThat(detail.getHospital()).isNull();
+        assertThat(detail.getDoctor()).isNull();
+        assertThat(detail.isCancellable()).isFalse();
+    }
+
+    @Test
+    void getDetailForPatient_someoneElsesAppointment_isForbidden() {
+        when(doctorAppointmentBookingRepository.findById("a1")).thenReturn(Optional.of(
+                DoctorAppointmentBooking.builder().id("a1").patientId("p1").hospitalId("h1").doctorId("d1").build()));
+
+        assertThatThrownBy(() -> service.getDetailForPatient("a1", "p2")).isInstanceOf(ForbiddenException.class);
+        verify(hospitalRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void getDetailForPatient_unknownId_isNotFound() {
+        when(doctorAppointmentBookingRepository.findById("nope")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getDetailForPatient("nope", "p1")).isInstanceOf(ResourceNotFoundException.class);
     }
 }

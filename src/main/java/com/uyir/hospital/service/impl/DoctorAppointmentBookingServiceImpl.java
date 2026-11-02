@@ -1,5 +1,6 @@
 package com.uyir.hospital.service.impl;
 
+import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
@@ -22,8 +23,11 @@ import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.security.Role;
 import com.uyir.hospital.service.DoctorAppointmentBookingService;
+import com.uyir.hospital.dto.TokenAvailabilityResponse;
+import com.uyir.hospital.service.DoctorTokenLimitService;
 import com.uyir.hospital.service.HospitalSeatService;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -51,6 +55,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final DoctorAppointmentBookingMapper doctorAppointmentBookingMapper;
     private final AppointmentTokenGenerator appointmentTokenGenerator;
     private final HospitalSeatService hospitalSeatService;
+    private final DoctorTokenLimitService doctorTokenLimitService;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
@@ -90,6 +95,9 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 : DoctorAppointmentBooking.DEFAULT_DURATION_MINUTES;
         ensureSlotFree(request.getDoctorId(), request.getAppointmentDateTime(), durationMinutes, null);
 
+        // Last check before saving: 409 when the hospital's tokens for that doctor and day are all taken.
+        int tokenNumber = claimToken(request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime());
+
         Instant now = Instant.now();
         DoctorAppointmentBooking booking = DoctorAppointmentBooking.builder()
                 .patientId(patientId)
@@ -103,7 +111,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .doctorId(request.getDoctorId())
                 .appointmentDateTime(request.getAppointmentDateTime())
                 .durationMinutes(durationMinutes)
-                .tokenNumber(appointmentTokenGenerator.nextToken(request.getDoctorId(), request.getAppointmentDateTime()))
+                .tokenNumber(tokenNumber)
                 .consultationType(request.getConsultationType() != null
                         ? request.getConsultationType()
                         : ConsultationType.IN_PERSON)
@@ -116,7 +124,29 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .updatedAt(now)
                 .build();
 
-        return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+        try {
+            return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+        } catch (RuntimeException saveFailed) {
+            appointmentTokenGenerator.release(
+                    request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime(), tokenNumber);
+            throw saveFailed;
+        }
+    }
+
+    @Override
+    public TokenAvailabilityResponse getAvailability(String hospitalId, String doctorId, LocalDate date) {
+        Integer limit = doctorTokenLimitService.limitFor(hospitalId, doctorId, date);
+        int booked = appointmentTokenGenerator.takenTokens(hospitalId, doctorId, date).size();
+        Integer remaining = limit == null ? null : Math.max(0, limit - booked);
+        return TokenAvailabilityResponse.builder()
+                .hospitalId(hospitalId)
+                .doctorId(doctorId)
+                .date(date)
+                .tokenLimit(limit)
+                .bookedTokens(booked)
+                .remainingTokens(remaining)
+                .available(remaining == null || remaining > 0)
+                .build();
     }
 
     @Override
@@ -134,6 +164,40 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     }
 
     @Override
+    public AppointmentDetailResponse getDetailForPatient(String id, String patientId) {
+        DoctorAppointmentBooking booking = findById(id);
+        if (!booking.getPatientId().equals(patientId)) {
+            throw new ForbiddenException("Appointment booking '" + id + "' does not belong to patient '" + patientId + "'");
+        }
+
+        AppointmentDetailResponse.HospitalInfo hospital = hospitalRepository.findById(booking.getHospitalId())
+                .map(h -> AppointmentDetailResponse.HospitalInfo.builder()
+                        .id(h.getId())
+                        .hospitalName(h.getHospitalName())
+                        .address(h.getAddress())
+                        .contactDetails(h.getContactDetails())
+                        .build())
+                .orElse(null);
+        AppointmentDetailResponse.DoctorInfo doctor = doctorRepository.findById(booking.getDoctorId())
+                .map(d -> AppointmentDetailResponse.DoctorInfo.builder()
+                        .id(d.getId())
+                        .name(d.getName())
+                        .qualifications(d.getQualifications())
+                        .specialties(d.getSpecialties())
+                        .yearsOfExperience(d.getYearsOfExperience())
+                        .consultationFee(d.getConsultationFee())
+                        .build())
+                .orElse(null);
+
+        return AppointmentDetailResponse.builder()
+                .appointment(doctorAppointmentBookingMapper.toResponse(booking))
+                .hospital(hospital)
+                .doctor(doctor)
+                .cancellable(ACTIVE_STATUSES.contains(booking.getStatus()))
+                .build();
+    }
+
+    @Override
     public DoctorAppointmentBookingResponse reschedule(String id, String hospitalId, RescheduleAppointmentRequest request) {
         DoctorAppointmentBooking booking = findOwnedByHospital(id, hospitalId);
 
@@ -143,11 +207,14 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
 
         ensureSlotFree(booking.getDoctorId(), request.getAppointmentDateTime(), booking.effectiveDurationMinutes(), id);
 
-        // A token belongs to one day's queue; moving to another day joins the end of that day's queue.
+        // A token belongs to one day's queue. Moving to another day takes a token on that day (409 if
+        // they are all booked) and frees the old one for someone else.
         if (booking.getAppointmentDateTime() == null
                 || !AppointmentTokenGenerator.sameDay(booking.getAppointmentDateTime(), request.getAppointmentDateTime())) {
-            booking.setTokenNumber(
-                    appointmentTokenGenerator.nextToken(booking.getDoctorId(), request.getAppointmentDateTime()));
+            int newToken = claimToken(booking.getHospitalId(), booking.getDoctorId(), request.getAppointmentDateTime());
+            appointmentTokenGenerator.release(booking.getHospitalId(), booking.getDoctorId(),
+                    booking.getAppointmentDateTime(), booking.getTokenNumber());
+            booking.setTokenNumber(newToken);
         }
 
         booking.setAppointmentDateTime(request.getAppointmentDateTime());
@@ -187,7 +254,17 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         booking.setCancelledAt(now);
         booking.setUpdatedAt(now);
 
-        return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+        DoctorAppointmentBooking saved = doctorAppointmentBookingRepository.save(booking);
+        // The cancelled token goes back to the pool; the next patient booking that day gets it.
+        appointmentTokenGenerator.release(
+                booking.getHospitalId(), booking.getDoctorId(), booking.getAppointmentDateTime(), booking.getTokenNumber());
+        return doctorAppointmentBookingMapper.toResponse(saved);
+    }
+
+    private int claimToken(String hospitalId, String doctorId, Instant appointmentDateTime) {
+        Integer limit = doctorTokenLimitService.limitFor(
+                hospitalId, doctorId, AppointmentTokenGenerator.localDay(appointmentDateTime));
+        return appointmentTokenGenerator.claim(hospitalId, doctorId, appointmentDateTime, limit);
     }
 
     @Override
