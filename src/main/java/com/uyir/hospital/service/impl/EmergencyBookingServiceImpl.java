@@ -4,6 +4,9 @@ import com.uyir.hospital.catalog.EmergencyConditionCatalog;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.event.EmergencyBookingRequestedEvent;
+import com.uyir.hospital.event.BookingUpdateType;
+import com.uyir.hospital.event.BookingUpdatedEvent;
+import com.uyir.hospital.security.Role;
 import com.uyir.hospital.event.HospitalEventPublisher;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.exception.ForbiddenException;
@@ -76,6 +79,9 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
         EmergencyBooking saved = emergencyBookingRepository.save(booking);
         // Alert the hospital (live dashboard + email). Best-effort: never fails or delays the booking.
         hospitalEventPublisher.emergencyBookingRequested(EmergencyBookingRequestedEvent.of(saved, hospital));
+        // Live WebSocket update for the hospital and the patient's other devices.
+        hospitalEventPublisher.bookingUpdated(
+                BookingUpdatedEvent.of(BookingUpdateType.EMERGENCY_REQUESTED, saved, Role.PATIENT));
         return emergencyBookingMapper.toResponse(saved);
     }
 
@@ -84,7 +90,7 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
         findOwnedByHospital(id, hospitalId);
         Instant now = Instant.now();
         return transition(id, EnumSet.of(EmergencyBookingStatus.REQUESTED), EmergencyBookingStatus.ACCEPTED,
-                new Update().set("acceptedAt", now), now);
+                new Update().set("acceptedAt", now), now, BookingUpdateType.EMERGENCY_ACCEPTED, Role.HOSPITAL);
     }
 
     @Override
@@ -92,7 +98,7 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
         findOwnedByHospital(id, hospitalId);
         Instant now = Instant.now();
         return transition(id, EnumSet.of(EmergencyBookingStatus.REQUESTED), EmergencyBookingStatus.REJECTED,
-                new Update().set("rejectedAt", now).set("rejectionReason", reason), now);
+                new Update().set("rejectedAt", now).set("rejectionReason", reason), now, BookingUpdateType.EMERGENCY_REJECTED, Role.HOSPITAL);
     }
 
     @Override
@@ -100,7 +106,7 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
         findOwnedByHospital(id, hospitalId);
         Instant now = Instant.now();
         return transition(id, EnumSet.of(EmergencyBookingStatus.ACCEPTED), EmergencyBookingStatus.COMPLETED,
-                new Update().set("completedAt", now), now);
+                new Update().set("completedAt", now), now, BookingUpdateType.EMERGENCY_COMPLETED, Role.HOSPITAL);
     }
 
     @Override
@@ -112,13 +118,14 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
         Instant now = Instant.now();
         return transition(id, EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED),
                 EmergencyBookingStatus.CANCELLED,
-                new Update().set("cancelledAt", now).set("cancellationReason", reason), now);
+                new Update().set("cancelledAt", now).set("cancellationReason", reason), now, BookingUpdateType.EMERGENCY_CANCELLED, Role.PATIENT);
     }
 
     // Applies the change only if the booking is still in one of the `from` statuses, in a single
     // findAndModify - so a patient cancelling while the hospital accepts can't overwrite each other.
     private EmergencyBookingResponse transition(
-            String id, Set<EmergencyBookingStatus> from, EmergencyBookingStatus to, Update update, Instant now) {
+            String id, Set<EmergencyBookingStatus> from, EmergencyBookingStatus to, Update update, Instant now,
+            BookingUpdateType updateType, Role changedBy) {
         EmergencyBooking updated = mongoTemplate.findAndModify(
                 Query.query(Criteria.where("_id").is(id).and("status").in(from)),
                 update.set("status", to).set("updatedAt", now),
@@ -128,6 +135,7 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
             EmergencyBookingStatus current = findById(id).getStatus();
             throw new ConflictException("Cannot change emergency booking '" + id + "' from " + current + " to " + to);
         }
+        hospitalEventPublisher.bookingUpdated(BookingUpdatedEvent.of(updateType, updated, changedBy));
         return emergencyBookingMapper.toResponse(updated);
     }
 

@@ -1,5 +1,6 @@
 package com.uyir.hospital.event;
 
+import com.uyir.hospital.live.LiveUpdateHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
@@ -18,10 +19,12 @@ public class HospitalEventListener {
     private static final Logger log = LoggerFactory.getLogger(HospitalEventListener.class);
 
     private final EmergencyAlertHub alertHub;
+    private final LiveUpdateHub liveUpdateHub;
     private final JsonMapper jsonMapper;
 
-    public HospitalEventListener(EmergencyAlertHub alertHub, JsonMapper jsonMapper) {
+    public HospitalEventListener(EmergencyAlertHub alertHub, LiveUpdateHub liveUpdateHub, JsonMapper jsonMapper) {
         this.alertHub = alertHub;
+        this.liveUpdateHub = liveUpdateHub;
         this.jsonMapper = jsonMapper;
     }
 
@@ -32,10 +35,12 @@ public class HospitalEventListener {
     public void onMessage(String message) {
         try {
             JsonNode envelope = jsonMapper.readTree(message);
-            if (!EmergencyBookingRequestedEvent.EVENT_TYPE.equals(envelope.path("eventType").asString())) {
-                return;
+            String eventType = envelope.path("eventType").asString();
+            if (EmergencyBookingRequestedEvent.EVENT_TYPE.equals(eventType)) {
+                alertHub.push(jsonMapper.treeToValue(envelope.get("data"), EmergencyBookingRequestedEvent.class));
+            } else if (BookingUpdatedEvent.EVENT_TYPE.equals(eventType)) {
+                liveUpdateHub.push(jsonMapper.treeToValue(envelope.get("data"), BookingUpdatedEvent.class));
             }
-            alertHub.push(jsonMapper.treeToValue(envelope.get("data"), EmergencyBookingRequestedEvent.class));
         } catch (RuntimeException ex) {
             // A bad message is not retryable - skip it rather than block the partition.
             log.warn("Skipping unreadable hospital.events message: {}", ex.getMessage());

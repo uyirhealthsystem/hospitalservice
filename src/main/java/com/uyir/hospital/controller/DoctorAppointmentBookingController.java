@@ -4,6 +4,7 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.DoctorAppointmentDashboardResponse;
 import com.uyir.hospital.dto.FollowUpRequest;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
@@ -68,6 +69,17 @@ public class DoctorAppointmentBookingController {
             @RequestParam String doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return doctorAppointmentBookingService.getAvailability(hospitalId, doctorId, date);
+    }
+
+    // Hospital-only: dashboard for one of the hospital's doctors - doctor info, total / completed / remaining
+    // appointment counts and the appointments. Optional from / to (yyyy-MM-dd, inclusive, IST); none = all time.
+    @GetMapping("/doctors/{doctorId}/dashboard")
+    public DoctorAppointmentDashboardResponse getDoctorDashboard(
+            @PathVariable String doctorId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        String hospitalId = currentUserContext.requireHospitalId();
+        return doctorAppointmentBookingService.getDoctorDashboard(hospitalId, doctorId, from, to);
     }
 
     // Patient-only: the logged-in patient's own appointment booking history.

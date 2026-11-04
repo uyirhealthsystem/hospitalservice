@@ -15,6 +15,8 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.DoctorAppointmentDashboardResponse;
+import java.time.LocalDate;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.exception.ForbiddenException;
@@ -390,6 +392,35 @@ class DoctorAppointmentBookingControllerTest {
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
                                 RescheduleAppointmentRequest.builder().appointmentDateTime(future).build())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getDoctorDashboard_asHospital_returnsCounts() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(doctorAppointmentBookingService.getDoctorDashboard("h1", "d1", LocalDate.of(2026, 11, 1), null))
+                .thenReturn(DoctorAppointmentDashboardResponse.builder()
+                        .doctor(DoctorAppointmentDashboardResponse.DoctorInfo.builder().id("d1").name("Dr. Priya").build())
+                        .from(LocalDate.of(2026, 11, 1))
+                        .summary(DoctorAppointmentDashboardResponse.Summary.builder()
+                                .totalAppointments(5).completed(3).remaining(2).build())
+                        .appointments(List.of(response("a1", AppointmentStatus.CONFIRMED)))
+                        .build());
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/doctors/d1/dashboard").param("from", "2026-11-01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.doctor.name").value("Dr. Priya"))
+                .andExpect(jsonPath("$.summary.totalAppointments").value(5))
+                .andExpect(jsonPath("$.summary.completed").value(3))
+                .andExpect(jsonPath("$.summary.remaining").value(2))
+                .andExpect(jsonPath("$.appointments[0].id").value("a1"));
+    }
+
+    @Test
+    void getDoctorDashboard_notHospital_returns403() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenThrow(new ForbiddenException("hospital only"));
+
+        mockMvc.perform(get("/api/v1/hospital/doctor-appointments/doctors/d1/dashboard"))
                 .andExpect(status().isForbidden());
     }
 }

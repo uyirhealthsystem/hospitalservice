@@ -1,5 +1,6 @@
 package com.uyir.hospital.event;
 
+import com.uyir.hospital.live.LiveUpdateHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
@@ -17,8 +18,11 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
 
     private final EmergencyAlertHub alertHub;
 
-    public LocalHospitalEventPublisher(EmergencyAlertHub alertHub, Environment environment) {
+    private final LiveUpdateHub liveUpdateHub;
+
+    public LocalHospitalEventPublisher(EmergencyAlertHub alertHub, LiveUpdateHub liveUpdateHub, Environment environment) {
         this.alertHub = alertHub;
+        this.liveUpdateHub = liveUpdateHub;
         String reason = "local".equalsIgnoreCase(environment.getProperty("hospital.events.provider", "").trim())
                 ? "HOSPITAL_EVENTS_PROVIDER=local"
                 : "KAFKA_BROKERS is not set";
@@ -29,6 +33,11 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
     @Override
     public void emergencyBookingRequested(EmergencyBookingRequestedEvent event) {
         alertHub.push(event);
+    }
+
+    @Override
+    public void bookingUpdated(BookingUpdatedEvent event) {
+        liveUpdateHub.push(event);
     }
 
     // No Kafka, so no notification-service: the reminder email is not sent.

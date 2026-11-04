@@ -15,6 +15,7 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.DoctorAppointmentDashboardResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.exception.DuplicateResourceException;
@@ -37,6 +38,9 @@ import com.uyir.hospital.repository.DoctorAppointmentBookingRepository;
 import com.uyir.hospital.repository.DoctorRepository;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.dto.FollowUpRequest;
+import com.uyir.hospital.event.BookingUpdateType;
+import com.uyir.hospital.event.BookingUpdatedEvent;
+import com.uyir.hospital.event.HospitalEventPublisher;
 import com.uyir.hospital.dto.TokenAvailabilityResponse;
 import com.uyir.hospital.model.embedded.FollowUpInstruction;
 import com.uyir.hospital.exception.ConflictException;
@@ -84,6 +88,9 @@ class DoctorAppointmentBookingServiceImplTest {
     @Mock
     private FollowUpStore followUpStore;
 
+    @Mock
+    private HospitalEventPublisher hospitalEventPublisher;
+
     private final DoctorAppointmentBookingMapper mapper = new DoctorAppointmentBookingMapper();
 
     private DoctorAppointmentBookingServiceImpl service;
@@ -94,7 +101,7 @@ class DoctorAppointmentBookingServiceImplTest {
     void setUp() {
         service = new DoctorAppointmentBookingServiceImpl(
                 doctorAppointmentBookingRepository, hospitalRepository, doctorRepository, mapper, appointmentTokenGenerator,
-                hospitalSeatService, doctorTokenLimitService, billingService, followUpStore);
+                hospitalSeatService, doctorTokenLimitService, billingService, followUpStore, hospitalEventPublisher);
         lenient().when(followUpStore.link(anyString(), anyString())).thenReturn(true);
         // Every doctor holds a seat unless a test says otherwise.
         lenient().when(hospitalSeatService.hasSeat(anyString(), anyString())).thenReturn(true);
@@ -171,6 +178,12 @@ class DoctorAppointmentBookingServiceImplTest {
 
         assertThat(response.getPatientId()).isEqualTo("p1");
         assertThat(response.getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
+        org.mockito.ArgumentCaptor<BookingUpdatedEvent> event = org.mockito.ArgumentCaptor.forClass(BookingUpdatedEvent.class);
+        verify(hospitalEventPublisher).bookingUpdated(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(BookingUpdateType.APPOINTMENT_BOOKED);
+        assertThat(event.getValue().hospitalId()).isEqualTo("h1");
+        assertThat(event.getValue().patientId()).isEqualTo("p1");
+        assertThat(event.getValue().changedBy()).isEqualTo(Role.PATIENT);
     }
 
     @Test
@@ -345,6 +358,24 @@ class DoctorAppointmentBookingServiceImplTest {
         service.cancel("a1", "p1", Role.PATIENT, CancelAppointmentRequest.builder().reason("Better").build());
 
         verify(appointmentTokenGenerator).release("h1", "d1", future, 9);
+        org.mockito.ArgumentCaptor<BookingUpdatedEvent> event = org.mockito.ArgumentCaptor.forClass(BookingUpdatedEvent.class);
+        verify(hospitalEventPublisher).bookingUpdated(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(BookingUpdateType.APPOINTMENT_CANCELLED);
+        assertThat(event.getValue().status()).isEqualTo("CANCELLED");
+        assertThat(event.getValue().tokenNumber()).isEqualTo(9);
+        assertThat(event.getValue().changedBy()).isEqualTo(Role.PATIENT);
+    }
+
+    @Test
+    void create_slotClash_publishesNoLiveUpdate() {
+        when(hospitalRepository.existsById("h1")).thenReturn(true);
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(associatedActiveDoctor()));
+        when(doctorAppointmentBookingRepository.findByDoctorIdStatusInStartingBetween(
+                eq("d1"), anyCollection(), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(DoctorAppointmentBooking.builder().id("other").appointmentDateTime(future).build()));
+
+        assertThatThrownBy(() -> service.create("p1", validRequest())).isInstanceOf(DuplicateResourceException.class);
+        verify(hospitalEventPublisher, never()).bookingUpdated(any());
     }
 
     @Test
@@ -855,6 +886,9 @@ class DoctorAppointmentBookingServiceImplTest {
                 "a1", "h1", RescheduleAppointmentRequest.builder().appointmentDateTime(shifted).build());
 
         assertThat(response.getAppointmentDateTime()).isEqualTo(shifted);
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.APPOINTMENT_RESCHEDULED && e.changedBy() == Role.HOSPITAL
+                        && shifted.equals(e.appointmentDateTime())));
     }
 
     @Test
@@ -894,6 +928,8 @@ class DoctorAppointmentBookingServiceImplTest {
                 "a1", "h1", Role.HOSPITAL, CancelAppointmentRequest.builder().reason("Doctor on leave").build());
 
         assertThat(response.getCancelledBy()).isEqualTo(CancelledBy.HOSPITAL);
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.APPOINTMENT_CANCELLED && e.changedBy() == Role.HOSPITAL));
     }
 
     @Test
@@ -942,6 +978,8 @@ class DoctorAppointmentBookingServiceImplTest {
                 "a1", "h1", UpdateAppointmentStatusRequest.builder().status(AppointmentStatus.NO_SHOW).build());
 
         assertThat(response.getStatus()).isEqualTo(AppointmentStatus.NO_SHOW);
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.APPOINTMENT_NO_SHOW && "NO_SHOW".equals(e.status())));
     }
 
     @Test
@@ -1037,5 +1075,85 @@ class DoctorAppointmentBookingServiceImplTest {
         when(doctorAppointmentBookingRepository.findById("nope")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getDetailForPatient("nope", "p1")).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    private DoctorAppointmentBooking dashBooking(String id, AppointmentStatus status) {
+        return DoctorAppointmentBooking.builder()
+                .id(id).patientId("p1").hospitalId("h1").doctorId("d1")
+                .appointmentDateTime(future).status(status).build();
+    }
+
+    private Doctor dashDoctor() {
+        return Doctor.builder()
+                .id("d1").name("Dr. Priya").active(true).currentHospitalId("h1")
+                .consultationFee(new BigDecimal("500"))
+                .hospitalAssociations(List.of(HospitalAssociation.builder()
+                        .hospitalId("h1").department("Cardiology").consultationFee(new BigDecimal("700")).active(true).build()))
+                .build();
+    }
+
+    @Test
+    void getDoctorDashboard_countsTotalCompletedAndRemaining() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(dashDoctor()));
+        when(doctorAppointmentBookingRepository.findByHospitalIdAndDoctorIdOrderByAppointmentDateTimeAsc("h1", "d1"))
+                .thenReturn(List.of(
+                        dashBooking("a1", AppointmentStatus.COMPLETED),
+                        dashBooking("a2", AppointmentStatus.COMPLETED),
+                        dashBooking("a3", AppointmentStatus.CONFIRMED),
+                        dashBooking("a4", AppointmentStatus.RESCHEDULED),
+                        dashBooking("a5", AppointmentStatus.CANCELLED),
+                        dashBooking("a6", AppointmentStatus.NO_SHOW)));
+
+        DoctorAppointmentDashboardResponse result = service.getDoctorDashboard("h1", "d1", null, null);
+
+        assertThat(result.getSummary().getTotalAppointments()).isEqualTo(6);
+        assertThat(result.getSummary().getCompleted()).isEqualTo(2);
+        assertThat(result.getSummary().getRemaining()).isEqualTo(2);
+        assertThat(result.getSummary().getCancelled()).isEqualTo(1);
+        assertThat(result.getSummary().getNoShow()).isEqualTo(1);
+        assertThat(result.getAppointments()).hasSize(6);
+        assertThat(result.getDoctor().getName()).isEqualTo("Dr. Priya");
+        assertThat(result.getDoctor().getDepartment()).isEqualTo("Cardiology");
+        assertThat(result.getDoctor().getConsultationFee()).isEqualByComparingTo("700");
+        assertThat(result.getDoctor().isCheckedIn()).isTrue();
+        assertThat(result.getDoctor().isSeated()).isTrue();
+    }
+
+    @Test
+    void getDoctorDashboard_withDateRange_queriesIstWindow() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(dashDoctor()));
+        LocalDate day = LocalDate.of(2026, 11, 4);
+        Instant start = Instant.parse("2026-11-03T18:30:00Z");
+        Instant end = Instant.parse("2026-11-04T18:30:00Z");
+        when(doctorAppointmentBookingRepository.findByHospitalIdAndDoctorIdScheduledBetween("h1", "d1", start, end))
+                .thenReturn(List.of(dashBooking("a1", AppointmentStatus.CONFIRMED)));
+
+        DoctorAppointmentDashboardResponse result = service.getDoctorDashboard("h1", "d1", day, day);
+
+        assertThat(result.getSummary().getTotalAppointments()).isEqualTo(1);
+        assertThat(result.getSummary().getRemaining()).isEqualTo(1);
+        assertThat(result.getFrom()).isEqualTo(day);
+    }
+
+    @Test
+    void getDoctorDashboard_doctorNotAtThisHospital_forbidden() {
+        when(doctorRepository.findById("d1")).thenReturn(Optional.of(dashDoctor()));
+
+        assertThatThrownBy(() -> service.getDoctorDashboard("h2", "d1", null, null)).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void getDoctorDashboard_unknownDoctor_notFound() {
+        when(doctorRepository.findById("nope")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getDoctorDashboard("h1", "nope", null, null))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getDoctorDashboard_fromAfterTo_badRequest() {
+        assertThatThrownBy(() -> service.getDoctorDashboard(
+                "h1", "d1", LocalDate.of(2026, 11, 5), LocalDate.of(2026, 11, 4)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

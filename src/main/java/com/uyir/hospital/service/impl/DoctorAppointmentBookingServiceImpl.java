@@ -4,8 +4,12 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.DoctorAppointmentDashboardResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
+import com.uyir.hospital.event.BookingUpdateType;
+import com.uyir.hospital.event.BookingUpdatedEvent;
+import com.uyir.hospital.event.HospitalEventPublisher;
 import com.uyir.hospital.exception.DuplicateResourceException;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.exception.ResourceNotFoundException;
@@ -63,6 +67,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     private final DoctorTokenLimitService doctorTokenLimitService;
     private final BillingService billingService;
     private final FollowUpStore followUpStore;
+    private final HospitalEventPublisher hospitalEventPublisher;
 
     @Override
     public DoctorAppointmentBookingResponse create(String patientId, DoctorAppointmentBookingRequest request) {
@@ -154,8 +159,9 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 .updatedAt(now)
                 .build();
 
+        DoctorAppointmentBooking saved;
         try {
-            return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+            saved = doctorAppointmentBookingRepository.save(booking);
         } catch (RuntimeException saveFailed) {
             appointmentTokenGenerator.release(
                     request.getHospitalId(), request.getDoctorId(), request.getAppointmentDateTime(), tokenNumber);
@@ -164,6 +170,13 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
             }
             throw saveFailed;
         }
+        publishUpdate(BookingUpdateType.APPOINTMENT_BOOKED, saved, Role.PATIENT);
+        return doctorAppointmentBookingMapper.toResponse(saved);
+    }
+
+    // Live WebSocket update for the hospital and the patient. Best-effort: the publisher never throws.
+    private void publishUpdate(BookingUpdateType type, DoctorAppointmentBooking booking, Role changedBy) {
+        hospitalEventPublisher.bookingUpdated(BookingUpdatedEvent.of(type, booking, changedBy));
     }
 
     @Override
@@ -253,6 +266,78 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
     }
 
     @Override
+    public DoctorAppointmentDashboardResponse getDoctorDashboard(
+            String hospitalId, String doctorId, LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new IllegalArgumentException("'from' (" + from + ") must not be after 'to' (" + to + ")");
+        }
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found with id '" + doctorId + "'"));
+        // Kept even if the association is now inactive, so a hospital can still see a former doctor's history.
+        HospitalAssociation association = doctor.getHospitalAssociations() == null ? null
+                : doctor.getHospitalAssociations().stream()
+                        .filter(a -> hospitalId.equals(a.getHospitalId()))
+                        .findFirst()
+                        .orElse(null);
+        if (association == null) {
+            throw new ForbiddenException("Doctor '" + doctorId + "' is not associated with hospital '" + hospitalId + "'");
+        }
+
+        List<DoctorAppointmentBooking> bookings;
+        if (from == null && to == null) {
+            bookings = doctorAppointmentBookingRepository
+                    .findByHospitalIdAndDoctorIdOrderByAppointmentDateTimeAsc(hospitalId, doctorId);
+        } else {
+            // Open-ended sides get a far bound; IST days, half-open [from 00:00, to+1 00:00).
+            Instant start = from != null ? from.atStartOfDay(AppointmentTokenGenerator.ZONE).toInstant() : Instant.EPOCH;
+            Instant end = to != null ? to.plusDays(1).atStartOfDay(AppointmentTokenGenerator.ZONE).toInstant()
+                    : Instant.parse("9999-12-31T00:00:00Z");
+            bookings = doctorAppointmentBookingRepository
+                    .findByHospitalIdAndDoctorIdScheduledBetween(hospitalId, doctorId, start, end);
+        }
+
+        long completed = countStatus(bookings, EnumSet.of(AppointmentStatus.COMPLETED));
+        long remaining = countStatus(bookings, ACTIVE_STATUSES);
+        long noShow = countStatus(bookings, EnumSet.of(AppointmentStatus.NO_SHOW));
+        long cancelled = countStatus(bookings, EnumSet.of(AppointmentStatus.CANCELLED));
+
+        DoctorAppointmentDashboardResponse.DoctorInfo doctorInfo = DoctorAppointmentDashboardResponse.DoctorInfo.builder()
+                .id(doctor.getId())
+                .name(doctor.getName())
+                .qualifications(doctor.getQualifications())
+                .specialties(doctor.getSpecialties())
+                .yearsOfExperience(doctor.getYearsOfExperience())
+                .department(association.getDepartment())
+                .consultationFee(association.getConsultationFee() != null
+                        ? association.getConsultationFee() : doctor.getConsultationFee())
+                .availability(doctor.getAvailability())
+                .contactDetails(doctor.getContactDetails())
+                .seated(hospitalSeatService.hasSeat(hospitalId, doctorId))
+                .checkedIn(hospitalId.equals(doctor.getCurrentHospitalId()))
+                .checkedInAt(hospitalId.equals(doctor.getCurrentHospitalId()) ? doctor.getCheckedInAt() : null)
+                .active(doctor.isActive() && association.isActive())
+                .build();
+
+        return DoctorAppointmentDashboardResponse.builder()
+                .doctor(doctorInfo)
+                .from(from)
+                .to(to)
+                .summary(DoctorAppointmentDashboardResponse.Summary.builder()
+                        .totalAppointments(bookings.size())
+                        .completed(completed)
+                        .remaining(remaining)
+                        .noShow(noShow)
+                        .cancelled(cancelled)
+                        .build())
+                .appointments(bookings.stream().map(doctorAppointmentBookingMapper::toResponse).toList())
+                .build();
+    }
+
+    private static long countStatus(List<DoctorAppointmentBooking> bookings, Set<AppointmentStatus> statuses) {
+        return bookings.stream().filter(b -> statuses.contains(b.getStatus())).count();
+    }
+
+    @Override
     public AppointmentDetailResponse getDetailForPatient(String id, String patientId) {
         DoctorAppointmentBooking booking = findById(id);
         if (!booking.getPatientId().equals(patientId)) {
@@ -310,7 +395,9 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         booking.setStatus(AppointmentStatus.RESCHEDULED);
         booking.setUpdatedAt(Instant.now());
 
-        return doctorAppointmentBookingMapper.toResponse(doctorAppointmentBookingRepository.save(booking));
+        DoctorAppointmentBooking saved = doctorAppointmentBookingRepository.save(booking);
+        publishUpdate(BookingUpdateType.APPOINTMENT_RESCHEDULED, saved, Role.HOSPITAL);
+        return doctorAppointmentBookingMapper.toResponse(saved);
     }
 
     @Override
@@ -349,6 +436,7 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
                 booking.getHospitalId(), booking.getDoctorId(), booking.getAppointmentDateTime(), booking.getTokenNumber());
         // A cancelled follow-up can be booked again.
         unlinkFollowUp(booking);
+        publishUpdate(BookingUpdateType.APPOINTMENT_CANCELLED, saved, role);
         return doctorAppointmentBookingMapper.toResponse(saved);
     }
 
@@ -391,6 +479,8 @@ public class DoctorAppointmentBookingServiceImpl implements DoctorAppointmentBoo
         if (request.getStatus() == AppointmentStatus.NO_SHOW) {
             unlinkFollowUp(booking);
         }
+        publishUpdate(request.getStatus() == AppointmentStatus.COMPLETED
+                ? BookingUpdateType.APPOINTMENT_COMPLETED : BookingUpdateType.APPOINTMENT_NO_SHOW, saved, Role.HOSPITAL);
         return doctorAppointmentBookingMapper.toResponse(saved);
     }
 
