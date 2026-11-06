@@ -6,6 +6,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.uyir.hospital.live.LiveUpdateHub;
+import com.uyir.hospital.security.Role;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -14,8 +16,9 @@ import tools.jackson.databind.json.JsonMapper;
 class HospitalEventListenerTest {
 
     private final EmergencyAlertHub alertHub = mock(EmergencyAlertHub.class);
+    private final LiveUpdateHub liveUpdateHub = mock(LiveUpdateHub.class);
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
-    private final HospitalEventListener listener = new HospitalEventListener(alertHub, jsonMapper);
+    private final HospitalEventListener listener = new HospitalEventListener(alertHub, liveUpdateHub, jsonMapper);
 
     @Test
     void emergencyBookingRequested_isPushedToDashboards() {
@@ -46,10 +49,26 @@ class HospitalEventListenerTest {
     }
 
     @Test
+    void bookingUpdated_isPushedToLiveConnectionsOnly() {
+        BookingUpdatedEvent data = new BookingUpdatedEvent(BookingUpdateType.APPOINTMENT_CANCELLED,
+                BookingUpdatedEvent.BookingKind.APPOINTMENT, "a1", "h1", "p1", "John", "d1",
+                Instant.parse("2026-11-05T05:30:00Z"), 7, null, "CANCELLED", Role.PATIENT,
+                Instant.parse("2026-11-04T10:12:00Z"));
+        String message = jsonMapper.writeValueAsString(HospitalEvent.of(
+                BookingUpdatedEvent.EVENT_TYPE, BookingUpdatedEvent.EVENT_VERSION, data));
+
+        listener.onMessage(message);
+
+        verify(liveUpdateHub).push(data);
+        verify(alertHub, never()).push(any());
+    }
+
+    @Test
     void otherEventTypes_areIgnored() {
         listener.onMessage("{\"eventType\":\"SomethingElse\",\"eventVersion\":1,\"occurredAt\":\"x\",\"data\":{}}");
 
         verify(alertHub, never()).push(any());
+        verify(liveUpdateHub, never()).push(any());
     }
 
     @Test

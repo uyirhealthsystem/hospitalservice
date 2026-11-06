@@ -2,6 +2,8 @@ package com.uyir.hospital.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.uyir.hospital.live.LiveProperties;
+import com.uyir.hospital.live.LiveUpdateHub;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,8 +19,8 @@ import org.springframework.context.annotation.Import;
 class KafkaEventsConditionTest {
 
     @Configuration
-    @EnableConfigurationProperties(HospitalEventProperties.class)
-    @Import({EmergencyAlertHub.class, KafkaHospitalEventPublisher.class, LocalHospitalEventPublisher.class, HospitalEventListener.class})
+    @EnableConfigurationProperties({HospitalEventProperties.class, LiveProperties.class})
+    @Import({EmergencyAlertHub.class, LiveUpdateHub.class, KafkaHospitalEventPublisher.class, LocalHospitalEventPublisher.class, HospitalEventListener.class})
     static class EventBeans {
     }
 

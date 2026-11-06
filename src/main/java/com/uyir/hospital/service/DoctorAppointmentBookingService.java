@@ -4,6 +4,7 @@ import com.uyir.hospital.dto.AppointmentDetailResponse;
 import com.uyir.hospital.dto.CancelAppointmentRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingRequest;
 import com.uyir.hospital.dto.DoctorAppointmentBookingResponse;
+import com.uyir.hospital.dto.DoctorAppointmentDashboardResponse;
 import com.uyir.hospital.dto.RescheduleAppointmentRequest;
 import com.uyir.hospital.dto.UpdateAppointmentStatusRequest;
 import com.uyir.hospital.dto.FollowUpRequest;
@@ -22,6 +23,10 @@ public interface DoctorAppointmentBookingService {
     List<DoctorAppointmentBookingResponse> getByHospitalId(String hospitalId);
 
     List<DoctorAppointmentBookingResponse> getByPatientId(String patientId);
+
+    // Hospital: dashboard for one of its doctors - doctor info, appointment counts and the appointments.
+    // from / to are optional inclusive IST dates; both null = all time.
+    DoctorAppointmentDashboardResponse getDoctorDashboard(String hospitalId, String doctorId, LocalDate from, LocalDate to);
 
     // Patient: one of their own appointments, with the hospital and doctor details.
     AppointmentDetailResponse getDetailForPatient(String id, String patientId);

@@ -14,7 +14,10 @@ import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.exception.ForbiddenException;
+import com.uyir.hospital.event.BookingUpdateType;
+import com.uyir.hospital.event.BookingUpdatedEvent;
 import com.uyir.hospital.event.EmergencyBookingRequestedEvent;
+import com.uyir.hospital.security.Role;
 import com.uyir.hospital.event.HospitalEventPublisher;
 import com.uyir.hospital.exception.ResourceNotFoundException;
 import com.uyir.hospital.mapper.EmergencyBookingMapper;
@@ -142,6 +145,9 @@ class EmergencyBookingServiceImplTest {
 
         ArgumentCaptor<EmergencyBookingRequestedEvent> captor = ArgumentCaptor.forClass(EmergencyBookingRequestedEvent.class);
         verify(hospitalEventPublisher).emergencyBookingRequested(captor.capture());
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.EMERGENCY_REQUESTED && "b1".equals(e.bookingId())
+                        && "p1".equals(e.patientId()) && e.changedBy() == Role.PATIENT));
         EmergencyBookingRequestedEvent event = captor.getValue();
         assertThat(event.bookingId()).isEqualTo("b1");
         assertThat(event.hospitalId()).isEqualTo("h1");
@@ -331,6 +337,12 @@ class EmergencyBookingServiceImplTest {
         Document set = capturedSet();
         assertThat(set.get("status")).isEqualTo(EmergencyBookingStatus.ACCEPTED);
         assertThat(set).containsKeys("acceptedAt", "updatedAt");
+        ArgumentCaptor<BookingUpdatedEvent> live = ArgumentCaptor.forClass(BookingUpdatedEvent.class);
+        verify(hospitalEventPublisher).bookingUpdated(live.capture());
+        assertThat(live.getValue().type()).isEqualTo(BookingUpdateType.EMERGENCY_ACCEPTED);
+        assertThat(live.getValue().bookingType()).isEqualTo(BookingUpdatedEvent.BookingKind.EMERGENCY);
+        assertThat(live.getValue().status()).isEqualTo("ACCEPTED");
+        assertThat(live.getValue().changedBy()).isEqualTo(Role.HOSPITAL);
     }
 
     @Test
@@ -358,6 +370,7 @@ class EmergencyBookingServiceImplTest {
         assertThatThrownBy(() -> service.accept("b1", "h1"))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("CANCELLED");
+        verifyNoInteractions(hospitalEventPublisher);
     }
 
     @Test

@@ -6462,6 +6462,433 @@
       "id": "881b84b0-6fc2-4d83-baba-6cf66ffc684c"
     },
     {
+      "name": "Internal Lookup (Service-to-Service)",
+      "description": "One endpoint for other Uyir services (booking, notification, admin, payment) - not for the app or the gateway. Send hospitalId and/or doctorId, list the sections you want in `include` (HOSPITAL, DOCTOR, DOCTOR_STATUS, SEATED_DOCTORS, ON_DUTY_DOCTORS, SEATS), and optionally narrow profiles with `hospitalFields` / `doctorFields`. No authentication and no X-User-Id / X-User-Role needed.",
+      "item": [
+        {
+          "name": "Lookup - Default (Hospital + Doctor + Status)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('hospital, doctor and doctorStatus returned', () => {",
+                  "    pm.expect(body.hospital.id).to.eql(pm.variables.get('hospitalId'));",
+                  "    pm.expect(body.doctor.id).to.eql(pm.variables.get('doctorId'));",
+                  "    pm.expect(body.doctorStatus).to.have.property('bookable');",
+                  "});",
+                  "pm.test('sections not asked for are absent', () => {",
+                  "    pm.expect(body).to.not.have.property('seats');",
+                  "    pm.expect(body).to.not.have.property('seatedDoctors');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "No `include`: returns the hospital and doctor profiles plus DOCTOR_STATUS, because both ids are sent. Run \"Create Hospital\" and \"Create Doctor\" first so {{hospitalId}} / {{doctorId}} are set."
+          },
+          "id": "40ff8690-2697-4ecf-ac7a-3da8342301c6"
+        },
+        {
+          "name": "Lookup - Booking Check (Status + Selected Fields)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('hospital has only the requested fields', () => {",
+                  "    pm.expect(Object.keys(body.hospital)).to.have.members(['hospitalName', 'address', 'contactDetails']);",
+                  "    if (body.hospital.address) pm.expect(Object.keys(body.hospital.address)).to.eql(['district']);",
+                  "});",
+                  "pm.test('doctor has only the requested fields', () => {",
+                  "    pm.expect(Object.keys(body.doctor)).to.have.members(['name', 'specialties', 'consultationFee']);",
+                  "});",
+                  "pm.test('doctorStatus flags present', () => {",
+                  "    ['seated', 'associated', 'checkedInHere', 'bookable'].forEach(k => pm.expect(body.doctorStatus).to.have.property(k));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"include\": [\n    \"HOSPITAL\",\n    \"DOCTOR\",\n    \"DOCTOR_STATUS\"\n  ],\n  \"hospitalFields\": [\n    \"hospitalName\",\n    \"address.district\",\n    \"contactDetails\"\n  ],\n  \"doctorFields\": [\n    \"name\",\n    \"specialties\",\n    \"consultationFee\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "What a booking service needs before taking an appointment: can this doctor be booked at this hospital, and the names to show. `hospitalFields` / `doctorFields` cut each profile down; dotted paths like `address.district` return one nested value."
+          },
+          "id": "e83460c5-db49-495b-b705-b00147824e07"
+        },
+        {
+          "name": "Lookup - Hospital's Doctors (Seated + On Duty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('both doctor lists returned', () => {",
+                  "    pm.expect(body.seatedDoctors).to.be.an('array');",
+                  "    pm.expect(body.onDutyDoctors).to.be.an('array');",
+                  "});",
+                  "pm.test('doctors carry only the requested fields', () => {",
+                  "    body.seatedDoctors.concat(body.onDutyDoctors).forEach(d =>",
+                  "        pm.expect(Object.keys(d)).to.have.members(['id', 'name', 'specialties', 'currentHospitalId']));",
+                  "});",
+                  "pm.test('no hospital profile unless asked', () => pm.expect(body).to.not.have.property('hospital'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"include\": [\n    \"SEATED_DOCTORS\",\n    \"ON_DUTY_DOCTORS\"\n  ],\n  \"doctorFields\": [\n    \"id\",\n    \"name\",\n    \"specialties\",\n    \"currentHospitalId\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "Doctors in the hospital's seats (the only bookable ones) and doctors checked in there right now. `doctorFields` applies to every doctor in both lists."
+          },
+          "id": "690b3495-771c-419d-ad39-1954adc33be8"
+        },
+        {
+          "name": "Lookup - Seat Summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const seats = pm.response.json().seats;",
+                  "pm.test('seat summary returned', () => {",
+                  "    pm.expect(seats.hospitalId).to.eql(pm.variables.get('hospitalId'));",
+                  "    pm.expect(seats.totalSeats).to.eql(seats.occupiedSeats + seats.emptySeats);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"include\": [\n    \"SEATS\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "The hospital's seats: total / occupied / empty and who sits in each."
+          },
+          "id": "0ea499b6-c65c-4b50-8075-7204327a5e9c"
+        },
+        {
+          "name": "Lookup - Doctor Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('doctor only', () => {",
+                  "    pm.expect(Object.keys(body.doctor)).to.have.members(['name', 'tnmcNumber', 'currentHospitalId']);",
+                  "    pm.expect(body).to.not.have.property('hospital');",
+                  "    pm.expect(body).to.not.have.property('doctorStatus');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": \"{{doctorId}}\",\n  \"doctorFields\": [\n    \"name\",\n    \"tnmcNumber\",\n    \"currentHospitalId\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "Only a doctorId: returns the doctor profile. Sections that need a hospital (DOCTOR_STATUS, SEATS, ...) would be a 400 here."
+          },
+          "id": "a9c7a21e-0cf2-4b6e-88b5-aeeb08bcd19b"
+        },
+        {
+          "name": "Lookup - Section Without Its Id -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('says which id is missing', () => pm.expect(pm.response.text()).to.include('SEATS needs hospitalId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": \"{{doctorId}}\",\n  \"include\": [\n    \"SEATS\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "SEATS needs hospitalId; only doctorId is sent."
+          },
+          "id": "701a66cf-e5e5-48a2-90ff-99715ca359dd"
+        },
+        {
+          "name": "Lookup - Unknown Field -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('lists valid fields', () => pm.expect(pm.response.text()).to.include('hospitalName'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\",\n  \"hospitalFields\": [\n    \"notAField\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "A field name the hospital does not have: 400, and the message lists the valid field names."
+          },
+          "id": "3ba30a17-f1c3-43e7-a37a-5c15a0f942c1"
+        },
+        {
+          "name": "Lookup - Unknown Hospital -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospitalId\": \"does-not-exist\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "internal",
+                "lookup"
+              ]
+            },
+            "description": "An id that does not exist: 404."
+          },
+          "id": "ae784c5b-0149-43f3-a794-5eaafb0d0b11"
+        }
+      ],
+      "id": "c1f4cb70-8a7f-46f1-9220-9b5b65582298"
+    },
+    {
       "name": "Service Health & Docs",
       "description": "Spring Boot actuator, at /api/v1/hospital/actuator, plus the springdoc OpenAPI spec. Health is used by the k8s probes and the ALB health check. No X-User headers needed.",
       "item": [

@@ -25,6 +25,14 @@ public interface DoctorAppointmentBookingRepository extends MongoRepository<Doct
     long countByPatientIdAndStatusInAndAppointmentDateTimeAfter(
             String patientId, Collection<AppointmentStatus> statuses, Instant from);
 
+    // Doctor dashboard: one doctor's bookings at one hospital, all time or in a half-open [from, to) window.
+    List<DoctorAppointmentBooking> findByHospitalIdAndDoctorIdOrderByAppointmentDateTimeAsc(String hospitalId, String doctorId);
+
+    @Query(value = "{ 'hospitalId': ?0, 'doctorId': ?1, 'appointmentDateTime': { $gte: ?2, $lt: ?3 } }",
+            sort = "{ 'appointmentDateTime': 1 }")
+    List<DoctorAppointmentBooking> findByHospitalIdAndDoctorIdScheduledBetween(
+            String hospitalId, String doctorId, Instant from, Instant to);
+
     // Candidates for a slot clash: the caller narrows by each booking's own end time.
     @Query("{ 'doctorId': ?0, 'status': { $in: ?1 }, 'appointmentDateTime': { $gte: ?2, $lt: ?3 } }")
     List<DoctorAppointmentBooking> findByDoctorIdStatusInStartingBetween(
