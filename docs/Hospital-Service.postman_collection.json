@@ -130,10 +130,6 @@
       "key": "outsideWindowDateTime",
       "value": "",
       "type": "string"
-    },
-    {
-      "key": "internalApiKey",
-      "value": ""
     }
   ],
   "item": [
@@ -6467,7 +6463,7 @@
     },
     {
       "name": "Internal Lookup (Service-to-Service)",
-      "description": "One endpoint for other Uyir services (booking, notification, admin, payment) - not for the app or the gateway. Send hospitalId and/or doctorId, list the sections you want in `include` (HOSPITAL, DOCTOR, DOCTOR_STATUS, SEATED_DOCTORS, ON_DUTY_DOCTORS, SEATS), and optionally narrow profiles with `hospitalFields` / `doctorFields`. Authenticated by the X-Internal-Api-Key header, which must equal the server's INTERNAL_API_KEY; set `internalApiKey` in your environment. No X-User-Id / X-User-Role needed.",
+      "description": "One endpoint for other Uyir services (booking, notification, admin, payment) - not for the app or the gateway. Send hospitalId and/or doctorId, list the sections you want in `include` (HOSPITAL, DOCTOR, DOCTOR_STATUS, SEATED_DOCTORS, ON_DUTY_DOCTORS, SEATS), and optionally narrow profiles with `hospitalFields` / `doctorFields`. No authentication and no X-User-Id / X-User-Role needed.",
       "item": [
         {
           "name": "Lookup - Default (Hospital + Doctor + Status)",
@@ -6498,11 +6494,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6561,11 +6552,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6623,11 +6609,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6680,11 +6661,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6738,11 +6714,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6772,53 +6743,6 @@
           "id": "a9c7a21e-0cf2-4b6e-88b5-aeeb08bcd19b"
         },
         {
-          "name": "Lookup - Missing API Key -> 401",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"hospitalId\": \"{{hospitalId}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hospital/internal/lookup",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hospital",
-                "internal",
-                "lookup"
-              ]
-            },
-            "description": "No X-Internal-Api-Key header: refused. Same for a wrong key, or when the server has no INTERNAL_API_KEY set."
-          },
-          "id": "1a35ea1a-8936-40e9-9def-ed2b30837859"
-        },
-        {
           "name": "Lookup - Section Without Its Id -> 400",
           "event": [
             {
@@ -6838,11 +6762,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6891,11 +6810,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {
@@ -6943,11 +6857,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Internal-Api-Key",
-                "value": "{{internalApiKey}}",
-                "description": "Shared service key (env INTERNAL_API_KEY on the server)"
               }
             ],
             "body": {

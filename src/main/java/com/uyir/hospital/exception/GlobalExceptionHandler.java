@@ -53,11 +53,6 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
     }
 
-    @ExceptionHandler(InternalAuthException.class)
-    public ResponseEntity<ApiError> handleInternalAuth(InternalAuthException ex, HttpServletRequest request) {
-        return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
-    }
-
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<ApiError> handleDuplicateKey(DuplicateKeyException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, "A record with the given unique identifier already exists", request, null);
