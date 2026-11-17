@@ -58,7 +58,7 @@ class HospitalMetricsServiceImplTest {
     void getMetrics_aggregatesCounts() {
         when(hospitalRepository.count()).thenReturn(10L);
         when(hospitalRepository.countByActiveTrue()).thenReturn(8L);
-        when(hospitalRepository.countByActiveTrueAndEmergencyServicesHandlesEmergenciesTrue()).thenReturn(5L);
+        when(hospitalRepository.countHandlingEmergenciesAt(any())).thenReturn(5L);
         when(doctorRepository.count()).thenReturn(40L);
         when(doctorRepository.countByActiveTrue()).thenReturn(35L);
         when(doctorRepository.countByActiveTrueAndCurrentHospitalIdIsNotNull()).thenReturn(12L);

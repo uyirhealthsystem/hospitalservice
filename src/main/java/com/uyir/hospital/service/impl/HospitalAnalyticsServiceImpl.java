@@ -139,7 +139,7 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
                         .total(data.hospitals.size())
                         .active(activeHospitals.size())
                         .inactive(data.hospitals.size() - activeHospitals.size())
-                        .handlingEmergencies(countWithFlag(activeHospitals, EmergencyServices::isHandlesEmergencies))
+                        .handlingEmergencies(countWithFlag(activeHospitals, es -> es.onAt(Instant.now())))
                         .withAmbulance(countWithFlag(activeHospitals, EmergencyServices::isAmbulanceAvailable))
                         .withAmbulance24x7(countWithFlag(activeHospitals, EmergencyServices::isAmbulance24x7Available))
                         .byType(countByEnum(data.hospitals, Hospital::getHospitalType, HospitalType.class))
@@ -264,7 +264,7 @@ public class HospitalAnalyticsServiceImpl implements HospitalAnalyticsService {
                 .hospitalType(hospital.getHospitalType())
                 .active(hospital.isActive())
                 .handlesEmergencies(hospital.getEmergencyServices() != null
-                        && hospital.getEmergencyServices().isHandlesEmergencies())
+                        && hospital.getEmergencyServices().onAt(Instant.now()))
                 .generalBeds(beds == null ? 0 : nullToZero(beds.getGeneral()))
                 .icuBeds(beds == null ? 0 : nullToZero(beds.getIcu()))
                 .nicuBeds(beds == null ? 0 : nullToZero(beds.getNicu()))

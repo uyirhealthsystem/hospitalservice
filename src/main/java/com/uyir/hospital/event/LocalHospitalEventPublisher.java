@@ -40,6 +40,11 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
         liveUpdateHub.push(event);
     }
 
+    @Override
+    public void emergencyServicesExpiring(EmergencyServicesExpiringEvent event) {
+        liveUpdateHub.pushEmergencyServicesExpiring(event);
+    }
+
     // No Kafka, so no notification-service: the reminder email is not sent.
     @Override
     public void followUpReminderDue(FollowUpReminderDueEvent event) {

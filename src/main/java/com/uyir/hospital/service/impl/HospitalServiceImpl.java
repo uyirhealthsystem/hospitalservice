@@ -15,6 +15,7 @@ import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
 import com.uyir.hospital.repository.HospitalSearchCriteria;
+import com.uyir.hospital.service.EmergencyServicesProperties;
 import com.uyir.hospital.service.HospitalSeatService;
 import com.uyir.hospital.service.HospitalService;
 import java.time.Instant;
@@ -36,6 +37,7 @@ public class HospitalServiceImpl implements HospitalService {
     private final HospitalSeatService hospitalSeatService;
     private final SpecialtyCatalog specialtyCatalog;
     private final EmergencyConditionCatalog emergencyConditionCatalog;
+    private final EmergencyServicesProperties emergencyProperties;
 
     @Override
     public HospitalResponse create(String userId, HospitalRequest request) {
@@ -51,6 +53,7 @@ public class HospitalServiceImpl implements HospitalService {
 
         Hospital hospital = hospitalMapper.toEntity(request);
         applyCatalogValues(hospital, departments, conditions);
+        applyEmergencyLease(hospital, null, Instant.now());
         hospital.setUserId(userId);
         hospital.setActive(true);
         hospital.setCreatedAt(Instant.now());
@@ -105,8 +108,10 @@ public class HospitalServiceImpl implements HospitalService {
                     "Hospital with registration number '" + request.getRegistrationNumber() + "' already exists");
         }
 
+        EmergencyServices previous = hospital.getEmergencyServices();
         hospitalMapper.updateEntity(hospital, request);
         applyCatalogValues(hospital, departments, conditions);
+        applyEmergencyLease(hospital, previous, Instant.now());
         hospital.setUpdatedAt(Instant.now());
 
         return hospitalMapper.toResponse(hospitalRepository.save(hospital));
@@ -139,6 +144,30 @@ public class HospitalServiceImpl implements HospitalService {
         }
     }
 
+    // Emergency mode is a lease (EmergencyServices.emergencyOnUntil) the server sets - any lease fields a client
+    // sends are replaced here. Off: no lease. On: keep the running lease if it was already on (editing the
+    // profile doesn't extend it - the toggle does), otherwise start a new one from now.
+    private void applyEmergencyLease(Hospital hospital, EmergencyServices previous, Instant now) {
+        EmergencyServices current = hospital.getEmergencyServices();
+        if (current == null) {
+            return;
+        }
+        if (!current.isHandlesEmergencies()) {
+            setLease(current, null);
+        } else if (previous != null && previous.onAt(now) && previous.getEmergencyOnUntil() != null) {
+            current.setEmergencyOnUntil(previous.getEmergencyOnUntil());
+            current.setExpiryWarningSentAt(previous.getExpiryWarningSentAt());
+        } else {
+            setLease(current, now.plus(emergencyProperties.onDuration()));
+        }
+    }
+
+    // A new lease (or none) also re-arms the one-time expiry warning.
+    private static void setLease(EmergencyServices emergencyServices, Instant onUntil) {
+        emergencyServices.setEmergencyOnUntil(onUntil);
+        emergencyServices.setExpiryWarningSentAt(null);
+    }
+
     @Override
     public void deactivate(String id) {
         Hospital hospital = findEntityOrThrow(id);
@@ -165,6 +194,8 @@ public class HospitalServiceImpl implements HospitalService {
             hospital.setEmergencyServices(emergencyServices);
         }
         emergencyServices.setHandlesEmergencies(handlesEmergencies);
+        // Turning it on - even when already on - starts a fresh lease: this is how a hospital extends it.
+        setLease(emergencyServices, handlesEmergencies ? Instant.now().plus(emergencyProperties.onDuration()) : null);
         hospital.setUpdatedAt(Instant.now());
 
         return hospitalMapper.toResponse(hospitalRepository.save(hospital));

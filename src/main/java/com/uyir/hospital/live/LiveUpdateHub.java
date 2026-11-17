@@ -1,9 +1,11 @@
 package com.uyir.hospital.live;
 
 import com.uyir.hospital.event.BookingUpdatedEvent;
+import com.uyir.hospital.event.EmergencyServicesExpiringEvent;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -91,6 +93,24 @@ public class LiveUpdateHub {
         if (patient != null) {
             sendAll(LiveSubject.patient(event.patientId()).key(), patient, message);
         }
+    }
+
+    // Tells the hospital's open connections on this pod that its emergency mode is about to switch itself off.
+    public void pushEmergencyServicesExpiring(EmergencyServicesExpiringEvent event) {
+        if (event.hospitalId() == null) {
+            return;
+        }
+        String key = LiveSubject.hospital(event.hospitalId()).key();
+        Set<WebSocketSession> hospital = sessions.get(key);
+        if (hospital == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", EmergencyServicesExpiringEvent.LIVE_MESSAGE_TYPE);
+        payload.put("hospitalId", event.hospitalId());
+        payload.put("emergencyOnUntil", event.emergencyOnUntil());
+        payload.put("occurredAt", event.occurredAt());
+        sendAll(key, hospital, new TextMessage(jsonMapper.writeValueAsString(payload)));
     }
 
     void send(WebSocketSession session, Map<String, ?> payload) {
