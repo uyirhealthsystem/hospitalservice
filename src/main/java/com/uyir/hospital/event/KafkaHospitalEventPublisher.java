@@ -176,4 +176,29 @@ public class KafkaHospitalEventPublisher implements HospitalEventPublisher {
                 event.bookingId(), topic, ex);
         alertHub.push(event);
     }
+
+    // Keyed by hospital id. A lost email is logged, not retried here: the PRO (or an admin) can resend
+    // the claim code, which issues a fresh one.
+    @Override
+    public void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event) {
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(HospitalEvent.of(
+                    HospitalClaimCodeIssuedEvent.EVENT_TYPE, HospitalClaimCodeIssuedEvent.EVENT_VERSION, event));
+        } catch (RuntimeException ex) {
+            log.error("Could not serialize HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                kafkaTemplate.send(topic, event.hospitalId(), json).whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to publish HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                log.error("Failed to publish HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            }
+        });
+    }
 }

@@ -1,5 +1,9 @@
 package com.uyir.hospital.controller;
 
+import static org.mockito.Mockito.never;
+import com.uyir.hospital.service.HospitalClaimService;
+import com.uyir.hospital.exception.TooManyAttemptsException;
+import com.uyir.hospital.dto.ClaimHospitalRequest;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
@@ -54,6 +58,9 @@ class HospitalControllerTest {
     @MockitoBean
     private CurrentUserContext currentUserContext;
 
+    @MockitoBean
+    private HospitalClaimService hospitalClaimService;
+
     private HospitalRequest validRequest() {
         return HospitalRequest.builder()
                 .hospitalName("City Care Hospital")
@@ -81,7 +88,8 @@ class HospitalControllerTest {
 
     @Test
     void create_validRequest_returns201WithLocation() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO)).thenReturn("u1");
+        when(currentUserContext.getRole()).thenReturn(Role.HOSPITAL);
         when(hospitalService.create(eq("u1"), any(HospitalRequest.class))).thenReturn(response("h1"));
 
         mockMvc.perform(post("/api/v1/hospital")
@@ -93,7 +101,7 @@ class HospitalControllerTest {
 
     @Test
     void create_notHospitalRole_returns403() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL))
+        when(currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO))
                 .thenThrow(new ForbiddenException("This action requires the 'HOSPITAL' role"));
 
         mockMvc.perform(post("/api/v1/hospital")
@@ -104,7 +112,8 @@ class HospitalControllerTest {
 
     @Test
     void create_userAlreadyOwnsAHospital_returns409() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO)).thenReturn("u1");
+        when(currentUserContext.getRole()).thenReturn(Role.HOSPITAL);
         when(hospitalService.create(eq("u1"), any(HospitalRequest.class)))
                 .thenThrow(new DuplicateResourceException("User 'u1' has already created a hospital"));
 
@@ -125,7 +134,8 @@ class HospitalControllerTest {
 
     @Test
     void create_duplicateRegistration_returns409() throws Exception {
-        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u1");
+        when(currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO)).thenReturn("u1");
+        when(currentUserContext.getRole()).thenReturn(Role.HOSPITAL);
         when(hospitalService.create(eq("u1"), any(HospitalRequest.class)))
                 .thenThrow(new DuplicateResourceException("Hospital with registration number 'REG-123' already exists"));
 
@@ -315,5 +325,73 @@ class HospitalControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Validation failed"));
+    }
+
+    // ── PRO onboarding and claiming ──────────────────────────────────────────
+
+    @Test
+    void create_asPro_onboardsThroughClaimService() throws Exception {
+        when(currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO)).thenReturn("pro-1");
+        when(currentUserContext.getRole()).thenReturn(Role.PRO);
+        HospitalResponse onboarded = response("h9");
+        onboarded.setOnboardedByProUserId("pro-1");
+        onboarded.setClaimCodeSentTo("ad***@city.in");
+        when(hospitalClaimService.onboard(eq("pro-1"), any(HospitalRequest.class))).thenReturn(onboarded);
+
+        mockMvc.perform(post("/api/v1/hospital")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("h9"))
+                .andExpect(jsonPath("$.claimed").value(false))
+                .andExpect(jsonPath("$.claimCodeSentTo").value("ad***@city.in"));
+        verify(hospitalService, never()).create(any(), any());
+    }
+
+    @Test
+    void claim_asHospital_returnsTheClaimedHospital() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u7");
+        HospitalResponse claimed = response("h9");
+        claimed.setUserId("u7");
+        claimed.setClaimed(true);
+        when(hospitalClaimService.claim(eq("u7"), any(ClaimHospitalRequest.class))).thenReturn(claimed);
+
+        mockMvc.perform(post("/api/v1/hospital/claim")
+                        .contentType("application/json")
+                        .content("{\"hospitalId\":\"h9\",\"claimCode\":\"K7P4-QX2M\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("u7"))
+                .andExpect(jsonPath("$.claimed").value(true));
+    }
+
+    @Test
+    void claim_missingCode_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/hospital/claim")
+                        .contentType("application/json")
+                        .content("{\"hospitalId\":\"h9\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void claim_tooManyWrongCodes_returns429() throws Exception {
+        when(currentUserContext.requireRole(Role.HOSPITAL)).thenReturn("u7");
+        when(hospitalClaimService.claim(eq("u7"), any(ClaimHospitalRequest.class)))
+                .thenThrow(new TooManyAttemptsException("Too many wrong codes"));
+
+        mockMvc.perform(post("/api/v1/hospital/claim")
+                        .contentType("application/json")
+                        .content("{\"hospitalId\":\"h9\",\"claimCode\":\"AAAA-AAAA\"}"))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void resendClaimCode_asPro_delegatesWithRole() throws Exception {
+        when(currentUserContext.requireAnyRole(Role.PRO, Role.ADMIN, Role.SUPER_ADMIN)).thenReturn("pro-1");
+        when(currentUserContext.getRole()).thenReturn(Role.PRO);
+        when(hospitalClaimService.resendCode("pro-1", Role.PRO, "h9")).thenReturn(response("h9"));
+
+        mockMvc.perform(post("/api/v1/hospital/h9/claim-code/resend"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("h9"));
     }
 }

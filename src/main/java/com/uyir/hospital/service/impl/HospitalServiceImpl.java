@@ -46,15 +46,35 @@ public class HospitalServiceImpl implements HospitalService {
         if (hospitalRepository.existsByUserId(userId)) {
             throw new DuplicateResourceException("User '" + userId + "' has already created a hospital");
         }
+        Hospital hospital = newHospital(request, departments, conditions);
+        hospital.setUserId(userId);
+        return save(hospital);
+    }
+
+    // A PRO onboards the hospital on its behalf: no owner yet (userId stays null, so the one-hospital-per-user
+    // rule doesn't apply to the PRO), and the PRO is recorded. The hospital's own HOSPITAL account claims it
+    // later with the emailed claim code (HospitalClaimService).
+    @Override
+    public HospitalResponse createOnboarded(String proUserId, HospitalRequest request) {
+        List<String> departments = normalizedDepartments(request);
+        List<String> conditions = normalizedConditions(request);
+        Hospital hospital = newHospital(request, departments, conditions);
+        hospital.setOnboardedByProUserId(proUserId);
+        return save(hospital);
+    }
+
+    private Hospital newHospital(HospitalRequest request, List<String> departments, List<String> conditions) {
         if (hospitalRepository.existsByRegistrationNumber(request.getRegistrationNumber())) {
             throw new DuplicateResourceException(
                     "Hospital with registration number '" + request.getRegistrationNumber() + "' already exists");
         }
-
         Hospital hospital = hospitalMapper.toEntity(request);
         applyCatalogValues(hospital, departments, conditions);
         applyEmergencyLease(hospital, null, Instant.now());
-        hospital.setUserId(userId);
+        return hospital;
+    }
+
+    private HospitalResponse save(Hospital hospital) {
         hospital.setActive(true);
         hospital.setCreatedAt(Instant.now());
         hospital.setUpdatedAt(Instant.now());

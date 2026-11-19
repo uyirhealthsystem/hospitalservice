@@ -16,4 +16,7 @@ public interface HospitalEventPublisher {
 
     // Asks notification-service to remind a patient to book the follow-up the hospital asked for.
     void followUpReminderDue(FollowUpReminderDueEvent event);
+
+    // Asks notification-service to email a PRO-onboarded hospital its id and one-time claim code.
+    void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event);
 }

@@ -110,6 +110,34 @@ class HospitalServiceImplTest {
     }
 
     @Test
+    void createOnboarded_byPro_savesUnownedHospital_recordsThePro_andSkipsOnePerUserRule() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> {
+            Hospital saved = inv.getArgument(0);
+            saved.setId("h1");
+            return saved;
+        });
+
+        HospitalResponse response = service.createOnboarded("pro-1", validRequestBuilder().build());
+
+        assertThat(response.getUserId()).isNull();
+        assertThat(response.isClaimed()).isFalse();
+        assertThat(response.getOnboardedByProUserId()).isEqualTo("pro-1");
+        assertThat(response.isActive()).isTrue();
+        verify(hospitalRepository, never()).existsByUserId(any());
+        verify(hospitalSeatService).ensureFreeSeat("h1");
+    }
+
+    @Test
+    void createOnboarded_duplicateRegistration_isRejected() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.createOnboarded("pro-1", validRequestBuilder().build()))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(hospitalRepository, never()).save(any());
+    }
+
+    @Test
     void create_departmentsByCodeOrName_savedAsOfficialNamesWithoutDuplicates() {
         when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
         when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));

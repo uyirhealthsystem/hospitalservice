@@ -37,4 +37,13 @@ public class HospitalResponse {
     private boolean active;
     private Instant createdAt;
     private Instant updatedAt;
+
+    // PRO onboarding / claiming. The claim code itself is never returned - only where it was sent.
+    private String onboardedByProUserId;
+    // true once a HOSPITAL account owns this hospital (userId set).
+    private boolean claimed;
+    // Masked contactDetails.email the current claim code was sent to (e.g. "ad***@hospital.in"); null when
+    // claimed or no code is active.
+    private String claimCodeSentTo;
+    private Instant claimCodeExpiresAt;
 }
