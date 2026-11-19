@@ -21,8 +21,11 @@ import com.uyir.hospital.model.embedded.Facilities;
 import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.repository.HospitalRepository;
+import com.uyir.hospital.service.EmergencyServicesProperties;
 import com.uyir.hospital.service.HospitalSeatService;
 import com.uyir.hospital.repository.HospitalSearchCriteria;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +61,8 @@ class HospitalServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new HospitalServiceImpl(hospitalRepository, hospitalMapper, hospitalSeatService, specialtyCatalog, emergencyConditionCatalog);
+        service = new HospitalServiceImpl(hospitalRepository, hospitalMapper, hospitalSeatService, specialtyCatalog,
+                emergencyConditionCatalog, new EmergencyServicesProperties(Duration.ofHours(6), Duration.ofMinutes(15)));
     }
 
     private HospitalRequest.HospitalRequestBuilder validRequestBuilder() {
@@ -103,6 +107,34 @@ class HospitalServiceImplTest {
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUserId()).isEqualTo("u1");
         verify(hospitalSeatService).ensureFreeSeat("h1");
+    }
+
+    @Test
+    void createOnboarded_byPro_savesUnownedHospital_recordsThePro_andSkipsOnePerUserRule() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(false);
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> {
+            Hospital saved = inv.getArgument(0);
+            saved.setId("h1");
+            return saved;
+        });
+
+        HospitalResponse response = service.createOnboarded("pro-1", validRequestBuilder().build());
+
+        assertThat(response.getUserId()).isNull();
+        assertThat(response.isClaimed()).isFalse();
+        assertThat(response.getOnboardedByProUserId()).isEqualTo("pro-1");
+        assertThat(response.isActive()).isTrue();
+        verify(hospitalRepository, never()).existsByUserId(any());
+        verify(hospitalSeatService).ensureFreeSeat("h1");
+    }
+
+    @Test
+    void createOnboarded_duplicateRegistration_isRejected() {
+        when(hospitalRepository.existsByRegistrationNumber("REG-123")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.createOnboarded("pro-1", validRequestBuilder().build()))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(hospitalRepository, never()).save(any());
     }
 
     @Test
@@ -361,6 +393,88 @@ class HospitalServiceImplTest {
         when(hospitalRepository.findById("h1")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.setHandlesEmergencies("h1", true)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void setHandlesEmergencies_on_startsSixHourLeaseAndRearmsWarning() {
+        Hospital hospital = existingHospital();
+        hospital.setEmergencyServices(EmergencyServices.builder()
+                .handlesEmergencies(true)
+                .emergencyOnUntil(Instant.now().plusSeconds(60))
+                .expiryWarningSentAt(Instant.now())
+                .build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+        Instant before = Instant.now();
+
+        service.setHandlesEmergencies("h1", true);
+
+        EmergencyServices saved = hospital.getEmergencyServices();
+        assertThat(saved.getEmergencyOnUntil())
+                .isBetween(before.plus(Duration.ofHours(6)), Instant.now().plus(Duration.ofHours(6)));
+        assertThat(saved.getExpiryWarningSentAt()).isNull();
+    }
+
+    @Test
+    void setHandlesEmergencies_off_clearsLease() {
+        Hospital hospital = existingHospital();
+        hospital.setEmergencyServices(EmergencyServices.builder()
+                .handlesEmergencies(true).emergencyOnUntil(Instant.now().plusSeconds(600)).build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.setHandlesEmergencies("h1", false);
+
+        assertThat(hospital.getEmergencyServices().getEmergencyOnUntil()).isNull();
+    }
+
+    @Test
+    void create_emergencyOn_ignoresClientLeaseAndStampsSixHours() {
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+        Instant forged = Instant.parse("2099-01-01T00:00:00Z");
+        HospitalRequest request = validRequestBuilder()
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).emergencyOnUntil(forged).build())
+                .build();
+
+        service.create("user-1", request);
+
+        ArgumentCaptor<Hospital> captor = ArgumentCaptor.forClass(Hospital.class);
+        verify(hospitalRepository).save(captor.capture());
+        Instant onUntil = captor.getValue().getEmergencyServices().getEmergencyOnUntil();
+        assertThat(onUntil).isNotEqualTo(forged).isBefore(Instant.now().plus(Duration.ofHours(6)).plusSeconds(1));
+    }
+
+    @Test
+    void update_alreadyOn_keepsRunningLease() {
+        Instant running = Instant.now().plus(Duration.ofHours(2));
+        Hospital hospital = existingHospital();
+        hospital.setEmergencyServices(EmergencyServices.builder().handlesEmergencies(true).emergencyOnUntil(running).build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+        HospitalRequest request = validRequestBuilder()
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).build())
+                .build();
+
+        service.update("h1", request);
+
+        assertThat(hospital.getEmergencyServices().getEmergencyOnUntil()).isEqualTo(running);
+    }
+
+    @Test
+    void update_turnsOnAfterExpiry_startsNewLease() {
+        Hospital hospital = existingHospital();
+        hospital.setEmergencyServices(EmergencyServices.builder()
+                .handlesEmergencies(true).emergencyOnUntil(Instant.now().minusSeconds(5)).build());
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospital));
+        when(hospitalRepository.save(any(Hospital.class))).thenAnswer(inv -> inv.getArgument(0));
+        HospitalRequest request = validRequestBuilder()
+                .emergencyServices(EmergencyServices.builder().handlesEmergencies(true).build())
+                .build();
+
+        service.update("h1", request);
+
+        assertThat(hospital.getEmergencyServices().getEmergencyOnUntil())
+                .isAfter(Instant.now().plus(Duration.ofHours(5)));
     }
 
     @Test

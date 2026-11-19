@@ -28,9 +28,22 @@ public class Hospital {
     @Id
     private String id;
 
-    // AuthService user id (X-User-Id) of the HOSPITAL account that created this hospital.
+    // AuthService user id (X-User-Id) of the HOSPITAL account that owns this hospital.
     // One hospital per user - enforced in HospitalServiceImpl.create and by a unique index in MongoIndexConfig.
+    // Null for a hospital a PRO onboarded until its HOSPITAL account claims it (HospitalClaimService).
     private String userId;
+
+    // AuthService user id of the PRO who onboarded this hospital (null when the hospital registered itself).
+    private String onboardedByProUserId;
+
+    // Claim code for a PRO-onboarded hospital: emailed to contactDetails.email, stored only as a BCrypt
+    // hash, single use. Cleared once the hospital is claimed.
+    private String claimCodeHash;
+    private Instant claimCodeIssuedAt;
+    private Instant claimCodeExpiresAt;
+    // Wrong codes entered against the current claim code; claiming locks at the limit until a resend.
+    private int claimAttempts;
+    private Instant claimedAt;
 
     private String hospitalName;
 

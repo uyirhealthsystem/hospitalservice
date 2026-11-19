@@ -65,7 +65,7 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
                         .total(totalHospitals)
                         .active(activeHospitals)
                         .inactive(totalHospitals - activeHospitals)
-                        .handlingEmergencies(hospitalRepository.countByActiveTrueAndEmergencyServicesHandlesEmergenciesTrue())
+                        .handlingEmergencies(hospitalRepository.countHandlingEmergenciesAt(now))
                         .build())
                 .doctors(DoctorMetrics.builder()
                         .total(doctorRepository.count())
@@ -131,7 +131,7 @@ public class HospitalMetricsServiceImpl implements HospitalMetricsService {
                         .inactive(hospitals.size() - activeHospitals.size())
                         .handlingEmergencies(activeHospitals.stream()
                                 .filter(h -> h.getEmergencyServices() != null
-                                        && h.getEmergencyServices().isHandlesEmergencies())
+                                        && h.getEmergencyServices().onAt(now))
                                 .count())
                         .build())
                 .doctors(DoctorMetrics.builder()

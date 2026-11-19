@@ -40,10 +40,23 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
         liveUpdateHub.push(event);
     }
 
+    @Override
+    public void emergencyServicesExpiring(EmergencyServicesExpiringEvent event) {
+        liveUpdateHub.pushEmergencyServicesExpiring(event);
+    }
+
     // No Kafka, so no notification-service: the reminder email is not sent.
     @Override
     public void followUpReminderDue(FollowUpReminderDueEvent event) {
         log.info("Kafka is off: follow-up reminder ({}) for appointment '{}' not emailed",
                 event.reminderType(), event.appointmentId());
+    }
+
+    // Local dev only (hospital.events.provider=local or no KAFKA_BROKERS): nothing is emailed, so log the
+    // code to let a developer finish the claim flow. Production runs with Kafka and never reaches this.
+    @Override
+    public void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event) {
+        log.warn("DEV ONLY - Kafka is off, claim code not emailed: hospital '{}' ({}) claim code {} (expires {}, for {})",
+                event.hospitalId(), event.hospitalName(), event.claimCode(), event.expiresAt(), event.email());
     }
 }

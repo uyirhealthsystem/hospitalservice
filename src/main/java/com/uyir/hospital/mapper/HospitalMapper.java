@@ -56,6 +56,32 @@ public class HospitalMapper {
                 .active(hospital.isActive())
                 .createdAt(hospital.getCreatedAt())
                 .updatedAt(hospital.getUpdatedAt())
+                .onboardedByProUserId(hospital.getOnboardedByProUserId())
+                .claimed(hospital.getUserId() != null)
+                .claimCodeSentTo(claimPending(hospital) ? maskEmail(email(hospital)) : null)
+                .claimCodeExpiresAt(claimPending(hospital) ? hospital.getClaimCodeExpiresAt() : null)
                 .build();
+    }
+
+    private static boolean claimPending(Hospital hospital) {
+        return hospital.getUserId() == null && hospital.getClaimCodeHash() != null;
+    }
+
+    private static String email(Hospital hospital) {
+        return hospital.getContactDetails() == null ? null : hospital.getContactDetails().getEmail();
+    }
+
+    // "admin@cityhospital.in" -> "ad***@cityhospital.in"
+    public static String maskEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        String local = email.substring(0, at);
+        String visible = local.length() <= 2 ? local.substring(0, 1) : local.substring(0, 2);
+        return visible + "***" + email.substring(at);
     }
 }

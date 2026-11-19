@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.uyir.hospital.event.BookingUpdateType;
 import com.uyir.hospital.event.BookingUpdatedEvent;
+import com.uyir.hospital.event.EmergencyServicesExpiringEvent;
 import com.uyir.hospital.security.Role;
 import java.io.IOException;
 import java.time.Duration;
@@ -70,6 +71,24 @@ class LiveUpdateHubTest {
         assertThat(sentText(patient)).contains("\"type\":\"APPOINTMENT_BOOKED\"");
         verify(otherHospital, never()).sendMessage(any());
         verify(otherPatient, never()).sendMessage(any());
+    }
+
+    @Test
+    void pushEmergencyServicesExpiring_reachesThatHospitalOnly() throws IOException {
+        WebSocketSession hospital = session("s1", LiveSubject.hospital("h1"));
+        WebSocketSession otherHospital = session("s2", LiveSubject.hospital("h2"));
+        WebSocketSession patient = session("s3", LiveSubject.patient("p1"));
+        hub.register(LiveSubject.hospital("h1"), hospital);
+        hub.register(LiveSubject.hospital("h2"), otherHospital);
+        hub.register(LiveSubject.patient("p1"), patient);
+
+        hub.pushEmergencyServicesExpiring(new EmergencyServicesExpiringEvent("h1", "City Hospital",
+                Instant.parse("2026-11-09T18:00:00Z"), Instant.parse("2026-11-09T17:45:00Z")));
+
+        assertThat(sentText(hospital)).startsWith("{\"type\":\"EMERGENCY_SERVICES_EXPIRING\"")
+                .contains("\"emergencyOnUntil\":\"2026-11-09T18:00:00Z\"");
+        verify(otherHospital, never()).sendMessage(any());
+        verify(patient, never()).sendMessage(any());
     }
 
     @Test

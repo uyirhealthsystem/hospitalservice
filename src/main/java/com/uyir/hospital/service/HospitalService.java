@@ -13,6 +13,9 @@ public interface HospitalService {
     // userId is the creating HOSPITAL account's AuthService id; each user may own only one hospital.
     HospitalResponse create(String userId, HospitalRequest request);
 
+    // A PRO creates the hospital on its behalf: unowned (no userId) until its HOSPITAL account claims it.
+    HospitalResponse createOnboarded(String proUserId, HospitalRequest request);
+
     HospitalResponse getById(String id);
 
     // The hospital created by this AuthService user (each user owns at most one).

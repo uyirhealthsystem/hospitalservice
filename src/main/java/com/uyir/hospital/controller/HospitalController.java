@@ -1,5 +1,6 @@
 package com.uyir.hospital.controller;
 
+import com.uyir.hospital.dto.ClaimHospitalRequest;
 import com.uyir.hospital.dto.EmergencyServicesToggleRequest;
 import com.uyir.hospital.dto.HospitalRequest;
 import com.uyir.hospital.dto.HospitalResponse;
@@ -8,6 +9,7 @@ import com.uyir.hospital.model.enums.HospitalType;
 import com.uyir.hospital.model.enums.OwnershipType;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
+import com.uyir.hospital.service.HospitalClaimService;
 import com.uyir.hospital.service.HospitalService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -36,18 +38,38 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class HospitalController {
 
     private final HospitalService hospitalService;
+    private final HospitalClaimService hospitalClaimService;
     private final CurrentUserContext currentUserContext;
 
-    // Only a HOSPITAL account may create a hospital; its X-User-Id is stored as the hospital's userId.
+    // A HOSPITAL account creates its own hospital (its X-User-Id becomes the hospital's userId), or a PRO
+    // onboards one on the hospital's behalf: the hospital is then unowned, and its id plus a one-time claim
+    // code are emailed to contactDetails.email so its HOSPITAL account can claim it (POST /claim).
     @PostMapping
     public ResponseEntity<HospitalResponse> create(@Valid @RequestBody HospitalRequest request) {
-        String userId = currentUserContext.requireRole(Role.HOSPITAL);
-        HospitalResponse created = hospitalService.create(userId, request);
+        String userId = currentUserContext.requireAnyRole(Role.HOSPITAL, Role.PRO);
+        HospitalResponse created = currentUserContext.getRole() == Role.PRO
+                ? hospitalClaimService.onboard(userId, request)
+                : hospitalService.create(userId, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(created.getId())
                 .toUri();
         return ResponseEntity.created(location).body(created);
+    }
+
+    // A HOSPITAL account links itself to the hospital a PRO onboarded, with the hospital id and the claim
+    // code from the email. Afterwards GET /me returns that hospital.
+    @PostMapping("/claim")
+    public HospitalResponse claim(@Valid @RequestBody ClaimHospitalRequest request) {
+        String userId = currentUserContext.requireRole(Role.HOSPITAL);
+        return hospitalClaimService.claim(userId, request);
+    }
+
+    // Emails a new claim code (the previous one stops working). The onboarding PRO, an ADMIN or a SUPER_ADMIN.
+    @PostMapping("/{id}/claim-code/resend")
+    public HospitalResponse resendClaimCode(@PathVariable String id) {
+        String userId = currentUserContext.requireAnyRole(Role.PRO, Role.ADMIN, Role.SUPER_ADMIN);
+        return hospitalClaimService.resendCode(userId, currentUserContext.getRole(), id);
     }
 
     @GetMapping("/{id}")

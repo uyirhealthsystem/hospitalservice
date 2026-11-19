@@ -11,6 +11,12 @@ public interface HospitalEventPublisher {
     // patient's live WebSocket connections.
     void bookingUpdated(BookingUpdatedEvent event);
 
+    // Warns the hospital's live dashboards (every pod) that its emergency mode is about to switch itself off.
+    void emergencyServicesExpiring(EmergencyServicesExpiringEvent event);
+
     // Asks notification-service to remind a patient to book the follow-up the hospital asked for.
     void followUpReminderDue(FollowUpReminderDueEvent event);
+
+    // Asks notification-service to email a PRO-onboarded hospital its id and one-time claim code.
+    void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event);
 }

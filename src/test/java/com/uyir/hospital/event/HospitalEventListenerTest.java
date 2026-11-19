@@ -64,6 +64,19 @@ class HospitalEventListenerTest {
     }
 
     @Test
+    void emergencyServicesExpiring_isPushedToLiveConnections() {
+        EmergencyServicesExpiringEvent data = new EmergencyServicesExpiringEvent("h1", "City Hospital",
+                Instant.parse("2026-11-09T18:00:00Z"), Instant.parse("2026-11-09T17:45:00Z"));
+        String message = jsonMapper.writeValueAsString(HospitalEvent.of(
+                EmergencyServicesExpiringEvent.EVENT_TYPE, EmergencyServicesExpiringEvent.EVENT_VERSION, data));
+
+        listener.onMessage(message);
+
+        verify(liveUpdateHub).pushEmergencyServicesExpiring(data);
+        verify(alertHub, never()).push(any());
+    }
+
+    @Test
     void otherEventTypes_areIgnored() {
         listener.onMessage("{\"eventType\":\"SomethingElse\",\"eventVersion\":1,\"occurredAt\":\"x\",\"data\":{}}");
 

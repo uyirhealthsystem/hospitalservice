@@ -104,6 +104,46 @@ public class KafkaHospitalEventPublisher implements HospitalEventPublisher {
         }
     }
 
+    // Keyed by hospital id. If Kafka is unreachable only this pod's connections get the warning; the switch-off
+    // happens either way and the dashboard's countdown (emergencyOnUntil) still shows it.
+    @Override
+    public void emergencyServicesExpiring(EmergencyServicesExpiringEvent event) {
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(HospitalEvent.of(
+                    EmergencyServicesExpiringEvent.EVENT_TYPE, EmergencyServicesExpiringEvent.EVENT_VERSION, event));
+        } catch (RuntimeException ex) {
+            log.error("Could not serialize EmergencyServicesExpiring for hospital '{}'", event.hospitalId(), ex);
+            pushExpiringLocally(event);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                kafkaTemplate.send(topic, event.hospitalId(), json).whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        onExpiringFailed(event, ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                onExpiringFailed(event, ex);
+            }
+        });
+    }
+
+    private void onExpiringFailed(EmergencyServicesExpiringEvent event, Throwable ex) {
+        log.error("Failed to publish EmergencyServicesExpiring for hospital '{}' to '{}'; warning this pod's live connections only",
+                event.hospitalId(), topic, ex);
+        pushExpiringLocally(event);
+    }
+
+    private void pushExpiringLocally(EmergencyServicesExpiringEvent event) {
+        try {
+            liveUpdateHub.pushEmergencyServicesExpiring(event);
+        } catch (RuntimeException ex) {
+            log.warn("Emergency expiry warning for hospital '{}' failed: {}", event.hospitalId(), ex.getMessage());
+        }
+    }
+
     // Keyed by patient id. A lost reminder is logged, not retried: it is a courtesy, and the patient still
     // sees the follow-up in the app.
     @Override
@@ -135,5 +175,30 @@ public class KafkaHospitalEventPublisher implements HospitalEventPublisher {
         log.error("Failed to publish EmergencyBookingRequested for booking '{}' to '{}'; alerting this pod's dashboards only",
                 event.bookingId(), topic, ex);
         alertHub.push(event);
+    }
+
+    // Keyed by hospital id. A lost email is logged, not retried here: the PRO (or an admin) can resend
+    // the claim code, which issues a fresh one.
+    @Override
+    public void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event) {
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(HospitalEvent.of(
+                    HospitalClaimCodeIssuedEvent.EVENT_TYPE, HospitalClaimCodeIssuedEvent.EVENT_VERSION, event));
+        } catch (RuntimeException ex) {
+            log.error("Could not serialize HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                kafkaTemplate.send(topic, event.hospitalId(), json).whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to publish HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                log.error("Failed to publish HospitalClaimCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            }
+        });
     }
 }

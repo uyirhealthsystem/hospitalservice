@@ -41,6 +41,39 @@ curl -X POST http://localhost:8080/api/v1/hospital \
   }'
 ```
 
+Callers (`X-User-Role`):
+
+- **HOSPITAL** - creates its own hospital; its `X-User-Id` becomes `userId` (one hospital per user, 409 otherwise).
+- **PRO** - onboards a hospital on its behalf. The hospital is created **unowned** (`userId` null, `claimed: false`, `onboardedByProUserId` set) and a one-time claim code is emailed to `contactDetails.email` together with the hospital id (`HospitalClaimCodeIssued` on `hospital.events`, sent by notification-service). The response never contains the code - only `claimCodeSentTo` (masked email) and `claimCodeExpiresAt`. No email -> no code (`claimCodeSentTo: null`); an admin adds the email and resends.
+
+## PRO onboarding: claim a hospital
+
+The hospital's own HOSPITAL account links itself to the hospital a PRO onboarded.
+
+`POST /api/v1/hospital/claim` - role **HOSPITAL**
+
+```json
+{ "hospitalId": "6740c2f1a91b...", "claimCode": "K7P4-QX2M" }
+```
+
+The code is 8 characters (no 0/O/1/I/L), case and dash insensitive, stored only as a BCrypt hash, valid **7 days**, single use. On success the caller becomes the hospital's `userId`, the code is deleted, and `GET /me` returns the hospital.
+
+| Status | Meaning |
+|---|---|
+| 200 OK | Claimed - returns the `HospitalResponse` (`claimed: true`) |
+| 400 Bad Request | Code isn't 8 characters, or wrong code (`"Incorrect claim code. N attempts left."`) |
+| 404 Not Found | No hospital with this id |
+| 409 Conflict | This account already owns a hospital, the hospital is already claimed, the code expired, or no code is active |
+| 429 Too Many Requests | 5 wrong codes - locked until a new code is sent |
+
+## PRO onboarding: resend the claim code
+
+`POST /api/v1/hospital/{id}/claim-code/resend` - role **PRO** (only the PRO who onboarded it), **ADMIN** or **SUPER_ADMIN**
+
+Issues and emails a new code; the previous code stops working and the wrong-attempt count resets. Returns the `HospitalResponse` with the new `claimCodeSentTo` / `claimCodeExpiresAt`. 403 for another PRO, 409 if already claimed or the hospital has no email, 429 if a code was sent less than a minute ago.
+
+With Kafka off (local dev) nothing is emailed; the code is logged at WARN (`DEV ONLY - Kafka is off, claim code not emailed: ...`).
+
 ## Get a hospital by id
 
 `GET /api/v1/hospital/{id}` → 200 `HospitalResponse`, or 404 if not found.

@@ -40,6 +40,9 @@ public class HospitalEventListener {
                 alertHub.push(jsonMapper.treeToValue(envelope.get("data"), EmergencyBookingRequestedEvent.class));
             } else if (BookingUpdatedEvent.EVENT_TYPE.equals(eventType)) {
                 liveUpdateHub.push(jsonMapper.treeToValue(envelope.get("data"), BookingUpdatedEvent.class));
+            } else if (EmergencyServicesExpiringEvent.EVENT_TYPE.equals(eventType)) {
+                liveUpdateHub.pushEmergencyServicesExpiring(
+                        jsonMapper.treeToValue(envelope.get("data"), EmergencyServicesExpiringEvent.class));
             }
         } catch (RuntimeException ex) {
             // A bad message is not retryable - skip it rather than block the partition.

@@ -35,6 +35,10 @@ public class MongoIndexConfig {
         hospitalIndexOps.ensureIndex(new Index().on("address.district", Direction.ASC));
         hospitalIndexOps.ensureIndex(new Index().on("hospitalType", Direction.ASC));
         hospitalIndexOps.ensureIndex(new Index().on("active", Direction.ASC));
+        // EmergencyServicesExpiryJob looks up hospitals in emergency mode by lease end, every minute on every pod.
+        hospitalIndexOps.ensureIndex(new Index()
+                .on("emergencyServices.handlesEmergencies", Direction.ASC)
+                .on("emergencyServices.emergencyOnUntil", Direction.ASC));
         // One hospital per AuthService user. Partial so hospitals created before userId existed don't clash.
         hospitalIndexOps.ensureIndex(new Index()
                 .on("userId", Direction.ASC)
