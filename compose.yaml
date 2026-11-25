@@ -11,6 +11,9 @@ services:
       SPRING_MONGODB_URI: ${SPRING_MONGODB_URI:?Set SPRING_MONGODB_URI in .env}
       PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:?Set PAYMENT_SERVICE_URL in .env}
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?Set PAYMENT_WEBHOOK_SECRET in .env}
+      # Optional: incoming-ambulance tracking for emergencies (same AMBULANCE_INTERNAL_KEY as the ambulance service)
+      AMBULANCE_SERVICE_URL: ${AMBULANCE_SERVICE_URL:-}
+      AMBULANCE_INTERNAL_KEY: ${AMBULANCE_INTERNAL_KEY:-}
     networks:
       - uyir-backend
 

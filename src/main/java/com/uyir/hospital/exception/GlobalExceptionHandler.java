@@ -53,6 +53,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(AmbulanceUnavailableException.class)
+    public ResponseEntity<ApiError> handleAmbulanceUnavailable(AmbulanceUnavailableException ex, HttpServletRequest request) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(WebhookRejectedException.class)
     public ResponseEntity<ApiError> handleWebhookRejected(WebhookRejectedException ex, HttpServletRequest request) {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);

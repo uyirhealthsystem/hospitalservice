@@ -35,5 +35,8 @@ public class EmergencyBooking {
     private Instant cancelledAt;
     private String cancellationReason;
     private Instant completedAt;
+    // The ambulance service ride bringing the patient here, set by the patient (PATCH {id}/ambulance).
+    private String ambulanceBookingId;
+    private Instant ambulanceLinkedAt;
     private Instant updatedAt;
 }

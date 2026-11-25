@@ -1,8 +1,11 @@
 package com.uyir.hospital.service.impl;
 
+import com.uyir.hospital.ambulance.AmbulanceClient;
+import com.uyir.hospital.ambulance.AmbulanceTrack;
 import com.uyir.hospital.catalog.EmergencyConditionCatalog;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
+import com.uyir.hospital.dto.IncomingAmbulanceResponse;
 import com.uyir.hospital.event.EmergencyBookingRequestedEvent;
 import com.uyir.hospital.event.BookingUpdateType;
 import com.uyir.hospital.event.BookingUpdatedEvent;
@@ -35,6 +38,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EmergencyBookingServiceImpl implements EmergencyBookingService {
 
+    // A patient can link an ambulance until the hospital closes or either side ends the emergency.
+    private static final Set<EmergencyBookingStatus> LINKABLE =
+            EnumSet.of(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED);
+    // A hospital follows the ambulance once it has accepted (COMPLETED: still shows how the ride ended).
+    private static final Set<EmergencyBookingStatus> TRACKABLE =
+            EnumSet.of(EmergencyBookingStatus.ACCEPTED, EmergencyBookingStatus.COMPLETED);
+    // Ambulance ride statuses while it is on the road (the ambulance service's BookingStatus).
+    private static final Set<String> RIDE_LIVE = Set.of("SEARCHING", "EN_ROUTE_TO_PICKUP", "ARRIVED", "PICKED_UP");
+
     private final EmergencyBookingRepository emergencyBookingRepository;
     private final HospitalRepository hospitalRepository;
     private final EmergencyBookingMapper emergencyBookingMapper;
@@ -42,6 +54,7 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
     private final HospitalEventPublisher hospitalEventPublisher;
     private final EmergencyConditionCatalog emergencyConditionCatalog;
     private final EmergencyCoverage emergencyCoverage;
+    private final AmbulanceClient ambulanceClient;
 
     @Override
     public EmergencyBookingResponse create(String patientId, EmergencyBookingRequest request) {
@@ -121,19 +134,97 @@ public class EmergencyBookingServiceImpl implements EmergencyBookingService {
                 new Update().set("cancelledAt", now).set("cancellationReason", reason), now, BookingUpdateType.EMERGENCY_CANCELLED, Role.PATIENT);
     }
 
+    @Override
+    public EmergencyBookingResponse linkAmbulance(String id, String patientId, String ambulanceBookingId) {
+        EmergencyBooking booking = findById(id);
+        if (!booking.getPatientId().equals(patientId)) {
+            throw new ForbiddenException("Emergency booking '" + id + "' does not belong to patient '" + patientId + "'");
+        }
+        // The ride must exist and be this patient's own: otherwise a patient could show the hospital someone else's ride.
+        AmbulanceTrack ride = ambulanceClient.track(ambulanceBookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ambulance booking not found with id '" + ambulanceBookingId + "'"));
+        if (!patientId.equals(ride.patientId())) {
+            throw new ForbiddenException("Ambulance booking '" + ambulanceBookingId + "' does not belong to patient '" + patientId + "'");
+        }
+        Instant now = Instant.now();
+        return transition(id, LINKABLE, null,
+                new Update().set("ambulanceBookingId", ambulanceBookingId).set("ambulanceLinkedAt", now), now,
+                BookingUpdateType.EMERGENCY_AMBULANCE_LINKED, Role.PATIENT);
+    }
+
+    @Override
+    public IncomingAmbulanceResponse incomingAmbulance(String id, String hospitalId) {
+        EmergencyBooking booking = findById(id);
+        if (!booking.getHospitalId().equals(hospitalId)) {
+            throw new ForbiddenException("Emergency booking '" + id + "' does not belong to hospital '" + hospitalId + "'");
+        }
+        if (!TRACKABLE.contains(booking.getStatus())) {
+            throw new ConflictException("Emergency booking '" + id + "' is " + booking.getStatus()
+                    + ": the ambulance can be followed once it is ACCEPTED");
+        }
+        if (booking.getAmbulanceBookingId() == null) {
+            throw new ResourceNotFoundException("No ambulance is bringing the patient of emergency booking '" + id + "'");
+        }
+        AmbulanceTrack ride = ambulanceClient.track(booking.getAmbulanceBookingId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ambulance booking '" + booking.getAmbulanceBookingId() + "' no longer exists"));
+        if (!booking.getPatientId().equals(ride.patientId())) {
+            throw new ForbiddenException("The linked ambulance does not belong to this emergency's patient");
+        }
+        return toIncoming(booking, ride);
+    }
+
+    private static IncomingAmbulanceResponse toIncoming(EmergencyBooking booking, AmbulanceTrack ride) {
+        AmbulanceTrack.Booking b = ride.booking();
+        // Only while the ride is under way: the driver's position is not the hospital's to see after the drop.
+        boolean live = RIDE_LIVE.contains(b.status());
+        AmbulanceTrack.Driver d = ride.driver();
+        AmbulanceTrack.Location l = live ? ride.location() : null;
+        AmbulanceTrack.Eta eta = live ? ride.eta() : null;
+        return IncomingAmbulanceResponse.builder()
+                .emergencyBookingId(booking.getId())
+                .ambulanceBookingId(b.id())
+                .patientName(booking.getPatientName())
+                .patientPhone(booking.getPatientPhone())
+                .emergencyType(booking.getEmergencyType())
+                .status(b.status())
+                .patientOnBoard("PICKED_UP".equals(b.status()))
+                .ambulanceType(b.ambulanceType())
+                .pickup(place(b.pickup()))
+                .destination(place(b.drop()))
+                .driver(d == null ? null : IncomingAmbulanceResponse.Driver.builder()
+                        .name(d.name()).phone(d.phone()).plateNumber(d.plateNumber()).ambulanceType(d.ambulanceType())
+                        .build())
+                .location(l == null ? null : IncomingAmbulanceResponse.Location.builder()
+                        .lat(l.lat()).lng(l.lng()).heading(l.heading()).updatedAt(l.at()).build())
+                .etaMinutes(eta == null ? null : eta.minutes())
+                .distanceKm(eta == null ? null : eta.distanceKm())
+                .bookedAt(b.createdAt())
+                .build();
+    }
+
+    private static IncomingAmbulanceResponse.Place place(AmbulanceTrack.Place p) {
+        return p == null ? null : IncomingAmbulanceResponse.Place.builder().lat(p.lat()).lng(p.lng()).address(p.address()).build();
+    }
+
     // Applies the change only if the booking is still in one of the `from` statuses, in a single
     // findAndModify - so a patient cancelling while the hospital accepts can't overwrite each other.
     private EmergencyBookingResponse transition(
             String id, Set<EmergencyBookingStatus> from, EmergencyBookingStatus to, Update update, Instant now,
             BookingUpdateType updateType, Role changedBy) {
+        // to == null: a change that keeps the status (e.g. linking an ambulance), still only in a `from` status.
+        if (to != null) {
+            update.set("status", to);
+        }
         EmergencyBooking updated = mongoTemplate.findAndModify(
                 Query.query(Criteria.where("_id").is(id).and("status").in(from)),
-                update.set("status", to).set("updatedAt", now),
+                update.set("updatedAt", now),
                 FindAndModifyOptions.options().returnNew(true),
                 EmergencyBooking.class);
         if (updated == null) {
             EmergencyBookingStatus current = findById(id).getStatus();
-            throw new ConflictException("Cannot change emergency booking '" + id + "' from " + current + " to " + to);
+            throw new ConflictException(to == null
+                    ? "Cannot change emergency booking '" + id + "' while it is " + current
+                    : "Cannot change emergency booking '" + id + "' from " + current + " to " + to);
         }
         hospitalEventPublisher.bookingUpdated(BookingUpdatedEvent.of(updateType, updated, changedBy));
         return emergencyBookingMapper.toResponse(updated);
