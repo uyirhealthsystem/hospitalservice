@@ -16,6 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uyir.hospital.dto.EmergencyBookingReasonRequest;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
+import com.uyir.hospital.dto.IncomingAmbulanceResponse;
+import com.uyir.hospital.exception.AmbulanceUnavailableException;
 import com.uyir.hospital.event.EmergencyAlertHub;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.exception.ForbiddenException;
@@ -255,5 +257,53 @@ class EmergencyBookingControllerTest {
                         .contentType("application/json")
                         .content(reasonJson("x")))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void linkAmbulance_asPatient_passesPatientIdAndRide() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+        EmergencyBookingResponse linked = response("b1");
+        linked.setAmbulanceBookingId("amb1");
+        when(emergencyBookingService.linkAmbulance("b1", "p1", "amb1")).thenReturn(linked);
+
+        mockMvc.perform(patch("/api/v1/hospital/emergency-bookings/b1/ambulance")
+                        .contentType("application/json")
+                        .content("{\"ambulanceBookingId\":\"amb1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ambulanceBookingId").value("amb1"));
+    }
+
+    @Test
+    void linkAmbulance_blankRide_returns400() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+
+        mockMvc.perform(patch("/api/v1/hospital/emergency-bookings/b1/ambulance")
+                        .contentType("application/json")
+                        .content("{\"ambulanceBookingId\":\"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void incomingAmbulance_asHospital_returnsTracking() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(emergencyBookingService.incomingAmbulance("b1", "h1")).thenReturn(IncomingAmbulanceResponse.builder()
+                .emergencyBookingId("b1").ambulanceBookingId("amb1").status("PICKED_UP").patientOnBoard(true)
+                .etaMinutes(6L).build());
+
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings/b1/ambulance"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PICKED_UP"))
+                .andExpect(jsonPath("$.patientOnBoard").value(true))
+                .andExpect(jsonPath("$.etaMinutes").value(6));
+    }
+
+    @Test
+    void incomingAmbulance_ambulanceServiceDown_returns503() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(emergencyBookingService.incomingAmbulance("b1", "h1"))
+                .thenThrow(new AmbulanceUnavailableException("Ambulance tracking is unavailable right now, please retry"));
+
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings/b1/ambulance"))
+                .andExpect(status().isServiceUnavailable());
     }
 }

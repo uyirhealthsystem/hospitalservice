@@ -9,9 +9,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.uyir.hospital.ambulance.AmbulanceClient;
+import com.uyir.hospital.ambulance.AmbulanceTrack;
 import com.uyir.hospital.catalog.EmergencyConditionCatalog;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
+import com.uyir.hospital.dto.IncomingAmbulanceResponse;
+import java.time.Instant;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.event.BookingUpdateType;
@@ -71,6 +75,9 @@ class EmergencyBookingServiceImplTest {
     @Mock
     private HospitalSeatService hospitalSeatService;
 
+    @Mock
+    private AmbulanceClient ambulanceClient;
+
     private final EmergencyBookingMapper emergencyBookingMapper = new EmergencyBookingMapper();
 
     // The real 16 conditions.
@@ -82,7 +89,8 @@ class EmergencyBookingServiceImplTest {
     void setUp() {
         service = new EmergencyBookingServiceImpl(
                 emergencyBookingRepository, hospitalRepository, emergencyBookingMapper, mongoTemplate,
-                hospitalEventPublisher, emergencyConditionCatalog, new EmergencyCoverage(doctorRepository, hospitalSeatService));
+                hospitalEventPublisher, emergencyConditionCatalog, new EmergencyCoverage(doctorRepository, hospitalSeatService),
+                ambulanceClient);
         // By default h1 is covered: one seated doctor checked in there who handles chest pain.
         lenient().when(doctorRepository.findByCurrentHospitalIdAndActiveTrue("h1")).thenReturn(List.of(Doctor.builder()
                 .id("d1").active(true).currentHospitalId("h1")
@@ -416,5 +424,119 @@ class EmergencyBookingServiceImplTest {
 
         assertThatThrownBy(() -> service.cancel("b1", "p2", "x")).isInstanceOf(ForbiddenException.class);
         verifyNoInteractions(mongoTemplate);
+    }
+
+    // ---------------------------------------------------------------- ambulance link + hospital tracking
+
+    private static AmbulanceTrack ride(String patientId, String status, boolean withLocation) {
+        return new AmbulanceTrack(patientId,
+                new AmbulanceTrack.Booking("amb1", "EMERGENCY", status, "CARDIAC", "ALS",
+                        new AmbulanceTrack.Place(13.05, 80.21, "Home"), new AmbulanceTrack.Place(13.08, 80.27, "City Hospital"),
+                        null, null, Instant.parse("2026-11-25T10:00:00Z")),
+                new AmbulanceTrack.Driver("Ravi", "9000000000", "TN01AB1234", "ALS", "ON_TRIP"),
+                withLocation ? new AmbulanceTrack.Location(13.06, 80.24, 90.0, Instant.parse("2026-11-25T10:05:00Z")) : null,
+                withLocation ? new AmbulanceTrack.Eta(7, 3.2) : null);
+    }
+
+    private EmergencyBooking linked(EmergencyBookingStatus status) {
+        EmergencyBooking b = booking(status);
+        b.setAmbulanceBookingId("amb1");
+        b.setPatientName("John Doe");
+        return b;
+    }
+
+    @Test
+    void linkAmbulance_patientsOwnRide_storedWithoutChangingStatus() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.of(ride("p1", "SEARCHING", false)));
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+                eq(EmergencyBooking.class))).thenReturn(linked(EmergencyBookingStatus.ACCEPTED));
+
+        EmergencyBookingResponse response = service.linkAmbulance("b1", "p1", "amb1");
+
+        assertThat(response.getAmbulanceBookingId()).isEqualTo("amb1");
+        assertThat(fromStatuses()).containsExactlyInAnyOrder(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED);
+        Document set = capturedSet();
+        assertThat(set.get("ambulanceBookingId")).isEqualTo("amb1");
+        assertThat(set).containsKeys("ambulanceLinkedAt", "updatedAt").doesNotContainKey("status");
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.EMERGENCY_AMBULANCE_LINKED && e.changedBy() == Role.PATIENT));
+    }
+
+    @Test
+    void linkAmbulance_someoneElsesRide_forbiddenWithoutUpdating() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.of(ride("p2", "SEARCHING", false)));
+
+        assertThatThrownBy(() -> service.linkAmbulance("b1", "p1", "amb1")).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void linkAmbulance_unknownRide_notFound() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.linkAmbulance("b1", "p1", "amb1")).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void linkAmbulance_otherPatientsEmergency_forbiddenBeforeCallingAmbulanceService() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.linkAmbulance("b1", "p2", "amb1")).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(ambulanceClient, mongoTemplate);
+    }
+
+    @Test
+    void incomingAmbulance_onTheWay_showsPositionEtaAndDriver() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(linked(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.of(ride("p1", "PICKED_UP", true)));
+
+        IncomingAmbulanceResponse r = service.incomingAmbulance("b1", "h1");
+
+        assertThat(r.getStatus()).isEqualTo("PICKED_UP");
+        assertThat(r.isPatientOnBoard()).isTrue();
+        assertThat(r.getLocation().getLat()).isEqualTo(13.06);
+        assertThat(r.getEtaMinutes()).isEqualTo(7L);
+        assertThat(r.getDriver().getPlateNumber()).isEqualTo("TN01AB1234");
+        assertThat(r.getPickup().getAddress()).isEqualTo("Home");
+        assertThat(r.getPatientName()).isEqualTo("John Doe");
+    }
+
+    @Test
+    void incomingAmbulance_rideOver_hidesDriversPosition() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(linked(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.of(ride("p1", "COMPLETED", true)));
+
+        IncomingAmbulanceResponse r = service.incomingAmbulance("b1", "h1");
+
+        assertThat(r.getLocation()).isNull();
+        assertThat(r.getEtaMinutes()).isNull();
+    }
+
+    @Test
+    void incomingAmbulance_otherHospital_forbidden() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(linked(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.incomingAmbulance("b1", "h2")).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(ambulanceClient);
+    }
+
+    @Test
+    void incomingAmbulance_notYetAccepted_conflict() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(linked(EmergencyBookingStatus.REQUESTED)));
+
+        assertThatThrownBy(() -> service.incomingAmbulance("b1", "h1")).isInstanceOf(ConflictException.class);
+        verifyNoInteractions(ambulanceClient);
+    }
+
+    @Test
+    void incomingAmbulance_noAmbulanceLinked_notFound() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.incomingAmbulance("b1", "h1")).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(ambulanceClient);
     }
 }

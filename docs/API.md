@@ -594,6 +594,20 @@ The status check and the update run as one atomic Mongo `findAndModify` that mat
 
 In the metrics, `emergencyBookings.openNow` counts REQUESTED **and** ACCEPTED bookings (still in progress). `byStatus` lists all five statuses.
 
+## Incoming ambulance
+
+When the patient books an emergency ambulance to the hospital (ambulance service), the patient app links that ride to the emergency, so the hospital can follow the ambulance live.
+
+| Endpoint | Caller | Allowed in | Body | Returns |
+|---|---|---|---|---|
+| `PATCH /{id}/ambulance` | PATIENT (own booking) | REQUESTED, ACCEPTED | `{ "ambulanceBookingId": "<ambulance service booking id>" }` | `EmergencyBookingResponse` with `ambulanceBookingId`, `ambulanceLinkedAt` |
+| `GET /{id}/ambulance` | HOSPITAL (own booking) | ACCEPTED, COMPLETED | — | `IncomingAmbulanceResponse` |
+
+- Linking checks with the ambulance service that the ride exists (`404` otherwise) and belongs to the same patient (`403` otherwise). Linking again replaces the ride, for example after the first one was cancelled. It publishes a `BookingUpdated` event of type `EMERGENCY_AMBULANCE_LINKED`, so the hospital's live list refreshes.
+- `IncomingAmbulanceResponse`: `status` is the **ambulance ride's** status (`SEARCHING`, `EN_ROUTE_TO_PICKUP`, `ARRIVED`, `PICKED_UP`, `PAYMENT_PENDING`, `COMPLETED`, `CANCELLED`, `NO_AMBULANCE_FOUND`), plus `patientOnBoard` (`PICKED_UP`), `pickup`, `destination`, `driver { name, phone, plateNumber, ambulanceType }`, `location { lat, lng, heading, updatedAt }`, `etaMinutes` and `distanceKm`. The ETA is to the patient before pickup and to the hospital after. `location` and the ETA are only returned while the ride is under way (`SEARCHING` to `PICKED_UP`). Poll every ~5 s while it is.
+- `GET` errors: `403` for another hospital's booking, `404` when no ambulance is linked, `409` when the booking isn't ACCEPTED or COMPLETED, `503` when the ambulance service can't be reached.
+- hospitalservice reads the ride from the ambulance service's `GET /api/v1/ambulance/internal/bookings/{id}/track`, authenticated by `X-Internal-Key`. Set the same `AMBULANCE_INTERNAL_KEY` (at least 32 characters) on both services, plus `AMBULANCE_SERVICE_URL` here. Without them, `GET /{id}/ambulance` answers `503` and linking fails with `503`. Nothing else is affected.
+
 ## New-booking alerts to the hospital
 
 When a patient creates an emergency booking, the hospital is alerted automatically in two ways:

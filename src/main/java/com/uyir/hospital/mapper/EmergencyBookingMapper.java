@@ -23,6 +23,8 @@ public class EmergencyBookingMapper {
                 .cancelledAt(booking.getCancelledAt())
                 .cancellationReason(booking.getCancellationReason())
                 .completedAt(booking.getCompletedAt())
+                .ambulanceBookingId(booking.getAmbulanceBookingId())
+                .ambulanceLinkedAt(booking.getAmbulanceLinkedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();
     }

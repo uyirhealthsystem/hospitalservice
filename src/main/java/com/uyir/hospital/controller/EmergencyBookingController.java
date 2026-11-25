@@ -1,6 +1,8 @@
 package com.uyir.hospital.controller;
 
+import com.uyir.hospital.dto.EmergencyAmbulanceLinkRequest;
 import com.uyir.hospital.dto.EmergencyBookingReasonRequest;
+import com.uyir.hospital.dto.IncomingAmbulanceResponse;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.event.EmergencyAlertHub;
@@ -84,6 +86,22 @@ public class EmergencyBookingController {
     public EmergencyBookingResponse cancel(
             @PathVariable String id, @Valid @RequestBody EmergencyBookingReasonRequest request) {
         return emergencyBookingService.cancel(id, currentUserContext.requireRole(Role.PATIENT), request.getReason());
+    }
+
+    // Patient-only: the ambulance-service ride taking the patient to this hospital, so the hospital can follow it.
+    // REQUESTED / ACCEPTED only; the ride must be the same patient's.
+    @PatchMapping("/{id}/ambulance")
+    public EmergencyBookingResponse linkAmbulance(
+            @PathVariable String id, @Valid @RequestBody EmergencyAmbulanceLinkRequest request) {
+        return emergencyBookingService.linkAmbulance(
+                id, currentUserContext.requireRole(Role.PATIENT), request.getAmbulanceBookingId());
+    }
+
+    // Hospital-only: where the ambulance bringing this emergency patient is now (position, ETA, driver).
+    // Poll it every few seconds while the ride is under way.
+    @GetMapping("/{id}/ambulance")
+    public IncomingAmbulanceResponse incomingAmbulance(@PathVariable String id) {
+        return emergencyBookingService.incomingAmbulance(id, currentUserContext.requireHospitalId());
     }
 
     // Patient-only: the logged-in patient's own emergency booking history.
