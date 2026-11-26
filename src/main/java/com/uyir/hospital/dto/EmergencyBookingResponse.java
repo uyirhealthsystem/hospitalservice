@@ -1,5 +1,6 @@
 package com.uyir.hospital.dto;
 
+import com.uyir.hospital.model.enums.ArrivalMode;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -30,5 +31,9 @@ public class EmergencyBookingResponse {
     // The ambulance service ride bringing the patient here, set by the patient (PATCH {id}/ambulance).
     private String ambulanceBookingId;
     private Instant ambulanceLinkedAt;
+    // How the patient is getting here: UYIR_AMBULANCE / OTHER_AMBULANCE / OWN_WAY (null until the patient says).
+    private ArrivalMode arrivalMode;
+    // When the patient's phone last reported its position (null if never). The position itself: GET {id}/patient-location.
+    private Instant patientLocationUpdatedAt;
     private Instant updatedAt;
 }

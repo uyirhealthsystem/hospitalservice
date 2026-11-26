@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,6 +18,9 @@ import com.uyir.hospital.dto.EmergencyBookingReasonRequest;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.dto.IncomingAmbulanceResponse;
+import com.uyir.hospital.dto.IncomingPatientResponse;
+import com.uyir.hospital.dto.PatientLocationRequest;
+import com.uyir.hospital.model.enums.ArrivalMode;
 import com.uyir.hospital.exception.AmbulanceUnavailableException;
 import com.uyir.hospital.event.EmergencyAlertHub;
 import com.uyir.hospital.exception.ConflictException;
@@ -305,5 +309,68 @@ class EmergencyBookingControllerTest {
 
         mockMvc.perform(get("/api/v1/hospital/emergency-bookings/b1/ambulance"))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void setArrivalMode_asPatient_passesMode() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+        EmergencyBookingResponse updated = response("b1");
+        updated.setArrivalMode(ArrivalMode.OTHER_AMBULANCE);
+        when(emergencyBookingService.setArrivalMode("b1", "p1", ArrivalMode.OTHER_AMBULANCE)).thenReturn(updated);
+
+        mockMvc.perform(patch("/api/v1/hospital/emergency-bookings/b1/arrival-mode")
+                        .contentType("application/json")
+                        .content("{\"mode\":\"OTHER_AMBULANCE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.arrivalMode").value("OTHER_AMBULANCE"));
+    }
+
+    @Test
+    void setArrivalMode_missingMode_returns400() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+
+        mockMvc.perform(patch("/api/v1/hospital/emergency-bookings/b1/arrival-mode")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updatePatientLocation_asPatient_returns204() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+
+        mockMvc.perform(put("/api/v1/hospital/emergency-bookings/b1/patient-location")
+                        .contentType("application/json")
+                        .content("{\"lat\":13.05,\"lng\":80.25,\"accuracy\":10,\"recordedAt\":\"2026-11-26T08:00:00Z\"}"))
+                .andExpect(status().isNoContent());
+
+        verify(emergencyBookingService).updatePatientLocation(eq("b1"), eq("p1"), any(PatientLocationRequest.class));
+    }
+
+    @Test
+    void updatePatientLocation_latitudeOutOfRange_returns400() throws Exception {
+        when(currentUserContext.requireRole(Role.PATIENT)).thenReturn("p1");
+
+        mockMvc.perform(put("/api/v1/hospital/emergency-bookings/b1/patient-location")
+                        .contentType("application/json")
+                        .content("{\"lat\":95,\"lng\":80.25}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(emergencyBookingService);
+    }
+
+    @Test
+    void incomingPatient_asHospital_returnsPositionAndDistance() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        when(emergencyBookingService.incomingPatient("b1", "h1")).thenReturn(IncomingPatientResponse.builder()
+                .emergencyBookingId("b1").arrivalMode(ArrivalMode.OWN_WAY).status(EmergencyBookingStatus.ACCEPTED)
+                .location(IncomingPatientResponse.Location.builder().lat(13.05).lng(80.25).build())
+                .distanceKm(3.2).build());
+
+        mockMvc.perform(get("/api/v1/hospital/emergency-bookings/b1/patient-location"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.arrivalMode").value("OWN_WAY"))
+                .andExpect(jsonPath("$.location.lat").value(13.05))
+                .andExpect(jsonPath("$.distanceKm").value(3.2));
     }
 }
