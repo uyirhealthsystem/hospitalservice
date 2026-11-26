@@ -1,8 +1,11 @@
 package com.uyir.hospital.controller;
 
 import com.uyir.hospital.dto.EmergencyAmbulanceLinkRequest;
+import com.uyir.hospital.dto.EmergencyArrivalModeRequest;
 import com.uyir.hospital.dto.EmergencyBookingReasonRequest;
 import com.uyir.hospital.dto.IncomingAmbulanceResponse;
+import com.uyir.hospital.dto.IncomingPatientResponse;
+import com.uyir.hospital.dto.PatientLocationRequest;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.event.EmergencyAlertHub;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -102,6 +106,30 @@ public class EmergencyBookingController {
     @GetMapping("/{id}/ambulance")
     public IncomingAmbulanceResponse incomingAmbulance(@PathVariable String id) {
         return emergencyBookingService.incomingAmbulance(id, currentUserContext.requireHospitalId());
+    }
+
+    // Patient-only: how the patient is getting to the hospital (UYIR_AMBULANCE / OTHER_AMBULANCE / OWN_WAY).
+    // REQUESTED / ACCEPTED only.
+    @PatchMapping("/{id}/arrival-mode")
+    public EmergencyBookingResponse setArrivalMode(
+            @PathVariable String id, @Valid @RequestBody EmergencyArrivalModeRequest request) {
+        return emergencyBookingService.setArrivalMode(id, currentUserContext.requireRole(Role.PATIENT), request.getMode());
+    }
+
+    // Patient-only: the patient phone's position right now, sent every few seconds while on the way (ACCEPTED only),
+    // also from the background. 204, no body.
+    @PutMapping("/{id}/patient-location")
+    public ResponseEntity<Void> updatePatientLocation(
+            @PathVariable String id, @Valid @RequestBody PatientLocationRequest request) {
+        emergencyBookingService.updatePatientLocation(id, currentUserContext.requireRole(Role.PATIENT), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Hospital-only: where the emergency patient's phone is now and how far from the hospital.
+    // For patients coming by another ambulance or on their own. Poll it every few seconds.
+    @GetMapping("/{id}/patient-location")
+    public IncomingPatientResponse incomingPatient(@PathVariable String id) {
+        return emergencyBookingService.incomingPatient(id, currentUserContext.requireHospitalId());
     }
 
     // Patient-only: the logged-in patient's own emergency booking history.

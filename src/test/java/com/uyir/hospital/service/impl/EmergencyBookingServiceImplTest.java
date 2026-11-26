@@ -15,6 +15,13 @@ import com.uyir.hospital.catalog.EmergencyConditionCatalog;
 import com.uyir.hospital.dto.EmergencyBookingRequest;
 import com.uyir.hospital.dto.EmergencyBookingResponse;
 import com.uyir.hospital.dto.IncomingAmbulanceResponse;
+import com.uyir.hospital.dto.IncomingPatientResponse;
+import com.uyir.hospital.dto.PatientLocationRequest;
+import com.uyir.hospital.model.embedded.Address;
+import com.uyir.hospital.model.embedded.PatientLocation;
+import com.uyir.hospital.model.enums.ArrivalMode;
+import com.mongodb.client.result.UpdateResult;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 import java.time.Instant;
 import com.uyir.hospital.exception.ConflictException;
 import com.uyir.hospital.exception.ForbiddenException;
@@ -538,5 +545,161 @@ class EmergencyBookingServiceImplTest {
 
         assertThatThrownBy(() -> service.incomingAmbulance("b1", "h1")).isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(ambulanceClient);
+    }
+
+    @Test
+    void linkAmbulance_alsoRecordsUyirAmbulanceAsArrivalMode() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        when(ambulanceClient.track("amb1")).thenReturn(Optional.of(ride("p1", "SEARCHING", false)));
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+                eq(EmergencyBooking.class))).thenReturn(linked(EmergencyBookingStatus.ACCEPTED));
+
+        service.linkAmbulance("b1", "p1", "amb1");
+
+        assertThat(capturedSet().get("arrivalMode")).isEqualTo(ArrivalMode.UYIR_AMBULANCE);
+    }
+
+    @Test
+    void setArrivalMode_ownOpenEmergency_storedWithoutChangingStatus() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        EmergencyBooking updated = booking(EmergencyBookingStatus.ACCEPTED);
+        updated.setArrivalMode(ArrivalMode.OTHER_AMBULANCE);
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+                eq(EmergencyBooking.class))).thenReturn(updated);
+
+        EmergencyBookingResponse r = service.setArrivalMode("b1", "p1", ArrivalMode.OTHER_AMBULANCE);
+
+        assertThat(r.getArrivalMode()).isEqualTo(ArrivalMode.OTHER_AMBULANCE);
+        assertThat(fromStatuses()).containsExactlyInAnyOrder(EmergencyBookingStatus.REQUESTED, EmergencyBookingStatus.ACCEPTED);
+        assertThat(capturedSet()).containsKey("arrivalMode").doesNotContainKey("status");
+        verify(hospitalEventPublisher).bookingUpdated(org.mockito.ArgumentMatchers.argThat(e ->
+                e.type() == BookingUpdateType.EMERGENCY_ARRIVAL_MODE_SET && e.changedBy() == Role.PATIENT));
+    }
+
+    @Test
+    void setArrivalMode_otherPatientsEmergency_forbidden() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.setArrivalMode("b1", "p2", ArrivalMode.OWN_WAY)).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    private PatientLocationRequest fix(Instant recordedAt) {
+        return PatientLocationRequest.builder()
+                .lat(13.05).lng(80.25).accuracy(12.0).heading(90.0).speed(8.0).recordedAt(recordedAt).build();
+    }
+
+    private void stubLocationUpdate(long matched) {
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(EmergencyBooking.class)))
+                .thenReturn(UpdateResult.acknowledged(matched, matched, null));
+    }
+
+    private PatientLocation storedFix() {
+        ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
+        verify(mongoTemplate).updateFirst(any(Query.class), update.capture(), eq(EmergencyBooking.class));
+        return (PatientLocation) ((Document) update.getValue().getUpdateObject().get("$set")).get("patientLocation");
+    }
+
+    @Test
+    void updatePatientLocation_ownOpenEmergency_storesFixWithoutLiveEvent() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        stubLocationUpdate(1);
+        Instant taken = Instant.now().minusSeconds(5);
+
+        service.updatePatientLocation("b1", "p1", fix(taken));
+
+        PatientLocation stored = storedFix();
+        assertThat(stored.getLat()).isEqualTo(13.05);
+        assertThat(stored.getRecordedAt()).isEqualTo(taken);
+        assertThat(stored.getUpdatedAt()).isNotNull();
+        verifyNoInteractions(hospitalEventPublisher);
+    }
+
+    @Test
+    void updatePatientLocation_phoneClockAhead_countsAsTakenNow() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        stubLocationUpdate(1);
+
+        service.updatePatientLocation("b1", "p1", fix(Instant.now().plusSeconds(3600)));
+
+        assertThat(storedFix().getRecordedAt()).isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void updatePatientLocation_olderThanStoredFix_ignoredQuietly() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+        stubLocationUpdate(0);
+
+        service.updatePatientLocation("b1", "p1", fix(Instant.now().minusSeconds(600)));
+    }
+
+    @Test
+    void updatePatientLocation_emergencyOver_conflict() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.COMPLETED)));
+        stubLocationUpdate(0);
+
+        assertThatThrownBy(() -> service.updatePatientLocation("b1", "p1", fix(null))).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void updatePatientLocation_otherPatientsEmergency_forbidden() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(booking(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.updatePatientLocation("b1", "p2", fix(null))).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    private EmergencyBooking sharing(EmergencyBookingStatus status) {
+        EmergencyBooking b = booking(status);
+        b.setPatientName("John Doe");
+        b.setArrivalMode(ArrivalMode.OTHER_AMBULANCE);
+        b.setPatientLocation(PatientLocation.builder()
+                .lat(13.0827).lng(80.2707).recordedAt(Instant.now()).updatedAt(Instant.now()).build());
+        return b;
+    }
+
+    private Hospital hospitalAt(double lat, double lng) {
+        Address address = new Address();
+        address.setLocation(new GeoJsonPoint(lng, lat));
+        return Hospital.builder().id("h1").address(address).build();
+    }
+
+    @Test
+    void incomingPatient_onTheWay_showsPositionAndDistanceToHospital() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(sharing(EmergencyBookingStatus.ACCEPTED)));
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospitalAt(13.0604, 80.2496)));
+
+        IncomingPatientResponse r = service.incomingPatient("b1", "h1");
+
+        assertThat(r.getArrivalMode()).isEqualTo(ArrivalMode.OTHER_AMBULANCE);
+        assertThat(r.getLocation().getLat()).isEqualTo(13.0827);
+        assertThat(r.getHospital().getLat()).isEqualTo(13.0604);
+        assertThat(r.getDistanceKm()).isBetween(3.0, 3.5);
+        assertThat(r.getPatientName()).isEqualTo("John Doe");
+    }
+
+    @Test
+    void incomingPatient_emergencyCompleted_hidesPosition() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(sharing(EmergencyBookingStatus.COMPLETED)));
+        when(hospitalRepository.findById("h1")).thenReturn(Optional.of(hospitalAt(13.0604, 80.2496)));
+
+        IncomingPatientResponse r = service.incomingPatient("b1", "h1");
+
+        assertThat(r.getLocation()).isNull();
+        assertThat(r.getDistanceKm()).isNull();
+    }
+
+    @Test
+    void incomingPatient_otherHospital_forbidden() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(sharing(EmergencyBookingStatus.ACCEPTED)));
+
+        assertThatThrownBy(() -> service.incomingPatient("b1", "h2")).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void incomingPatient_notYetAccepted_conflict() {
+        when(emergencyBookingRepository.findById("b1")).thenReturn(Optional.of(sharing(EmergencyBookingStatus.REQUESTED)));
+
+        assertThatThrownBy(() -> service.incomingPatient("b1", "h1")).isInstanceOf(ConflictException.class);
     }
 }

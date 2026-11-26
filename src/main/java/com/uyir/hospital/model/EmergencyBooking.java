@@ -1,5 +1,7 @@
 package com.uyir.hospital.model;
 
+import com.uyir.hospital.model.embedded.PatientLocation;
+import com.uyir.hospital.model.enums.ArrivalMode;
 import com.uyir.hospital.model.enums.EmergencyBookingStatus;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -38,5 +40,9 @@ public class EmergencyBooking {
     // The ambulance service ride bringing the patient here, set by the patient (PATCH {id}/ambulance).
     private String ambulanceBookingId;
     private Instant ambulanceLinkedAt;
+    // How the patient is getting here (PATCH {id}/arrival-mode; linking an Uyir ambulance sets UYIR_AMBULANCE).
+    private ArrivalMode arrivalMode;
+    // The patient phone's latest position while on the way (PUT {id}/patient-location).
+    private PatientLocation patientLocation;
     private Instant updatedAt;
 }

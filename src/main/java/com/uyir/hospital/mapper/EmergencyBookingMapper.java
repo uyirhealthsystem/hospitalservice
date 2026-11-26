@@ -25,6 +25,8 @@ public class EmergencyBookingMapper {
                 .completedAt(booking.getCompletedAt())
                 .ambulanceBookingId(booking.getAmbulanceBookingId())
                 .ambulanceLinkedAt(booking.getAmbulanceLinkedAt())
+                .arrivalMode(booking.getArrivalMode())
+                .patientLocationUpdatedAt(booking.getPatientLocation() == null ? null : booking.getPatientLocation().getUpdatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();
     }
