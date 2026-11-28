@@ -4,8 +4,10 @@ import com.uyir.hospital.dto.DistrictAnalyticsReport;
 import com.uyir.hospital.dto.DistrictMetricsRequest;
 import com.uyir.hospital.dto.HospitalMetricsRequest;
 import com.uyir.hospital.dto.HospitalMetricsResponse;
+import com.uyir.hospital.dto.MyHospitalAnalyticsRequest;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
+import com.uyir.hospital.service.AnalyticsPinService;
 import com.uyir.hospital.service.HospitalAnalyticsService;
 import com.uyir.hospital.service.HospitalMetricsService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,6 +33,7 @@ public class HospitalMetricsController {
     private final HospitalMetricsService metricsService;
     private final HospitalAnalyticsService analyticsService;
     private final CurrentUserContext currentUserContext;
+    private final AnalyticsPinService analyticsPinService;
 
     @PostMapping
     public HospitalMetricsResponse getMetrics(@RequestBody(required = false) HospitalMetricsRequest request) {
@@ -49,12 +52,13 @@ public class HospitalMetricsController {
     }
 
     // HOSPITAL only: the same counts for the caller's own hospital (resolved from X-User-Id).
-    // Empty body = last 30 days.
+    // The analytics PIN is required in the body on every call; dates optional (default last 30 days).
     @PostMapping("/my-hospital")
-    public HospitalMetricsResponse getMyHospitalMetrics(@RequestBody(required = false) HospitalMetricsRequest request) {
+    public HospitalMetricsResponse getMyHospitalMetrics(@RequestBody(required = false) MyHospitalAnalyticsRequest request) {
         String hospitalId = currentUserContext.requireHospitalId();
-        HospitalMetricsRequest range = request != null ? request : new HospitalMetricsRequest();
-        return metricsService.getHospitalMetrics(hospitalId, range.getFromDate(), range.getToDate());
+        MyHospitalAnalyticsRequest body = request != null ? request : new MyHospitalAnalyticsRequest();
+        analyticsPinService.verify(hospitalId, body.getPin());
+        return metricsService.getHospitalMetrics(hospitalId, body.getFromDate(), body.getToDate());
     }
 
     // District in the path, no date params (always the default last 30 days).

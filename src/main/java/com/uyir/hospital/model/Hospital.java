@@ -45,6 +45,19 @@ public class Hospital {
     private int claimAttempts;
     private Instant claimedAt;
 
+    // Analytics PIN (AnalyticsPinService): the owning hospital account must enter it every time it opens its
+    // own analytics/metrics. Stored only as a BCrypt hash; null = not set yet, analytics locked.
+    private String analyticsPinHash;
+    private Instant analyticsPinUpdatedAt;
+    // Wrong PINs in a row; at the limit the PIN locks until analyticsPinLockedUntil and the count restarts.
+    private int analyticsPinFailedAttempts;
+    private Instant analyticsPinLockedUntil;
+    // Forgotten-PIN reset code, emailed to contactDetails.email. Hash only, single use, short-lived.
+    private String analyticsPinResetCodeHash;
+    private Instant analyticsPinResetCodeIssuedAt;
+    private Instant analyticsPinResetCodeExpiresAt;
+    private int analyticsPinResetAttempts;
+
     private String hospitalName;
 
     @Indexed(unique = true)

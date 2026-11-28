@@ -3,6 +3,7 @@ package com.uyir.hospital.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,9 +19,11 @@ import com.uyir.hospital.dto.AnalyticsTrendPoint;
 import com.uyir.hospital.dto.DistrictAnalyticsSummary;
 import com.uyir.hospital.dto.HospitalAnalyticsReport;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
+import com.uyir.hospital.exception.AnalyticsPinException;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
+import com.uyir.hospital.service.AnalyticsPinService;
 import com.uyir.hospital.service.HospitalAnalyticsService;
 import java.time.LocalDate;
 import java.util.List;
@@ -47,6 +50,9 @@ class HospitalAnalyticsControllerTest {
 
     @MockitoBean
     private CurrentUserContext currentUserContext;
+
+    @MockitoBean
+    private AnalyticsPinService analyticsPinService;
 
     @BeforeEach
     void asAdmin() {
@@ -230,17 +236,59 @@ class HospitalAnalyticsControllerTest {
                         .trends(List.of())
                         .build());
 
-        postJson("/my-hospital", "{\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}")
+        postJson("/my-hospital", "{\"pin\":\"4821\",\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hospital.hospitalId").value("h1"));
+        verify(analyticsPinService).verify("h1", "4821");
     }
 
     @Test
-    void myHospitalReport_noBody_passesNullDates() throws Exception {
+    void myHospitalReport_pinOnly_passesNullDates() throws Exception {
         when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(analyticsService.getHospitalReport(eq("h1"), isNull(), isNull())).thenReturn(new HospitalAnalyticsReport());
 
-        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isOk());
+        postJson("/my-hospital", "{\"pin\":\"4821\"}").andExpect(status().isOk());
+    }
+
+    @Test
+    void myHospitalReport_noBody_checksMissingPin() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        doThrow(new AnalyticsPinException(AnalyticsPinException.Code.ANALYTICS_PIN_REQUIRED, "Enter your analytics PIN"))
+                .when(analyticsPinService).verify("h1", null);
+
+        mockMvc.perform(post(BASE + "/my-hospital"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ANALYTICS_PIN_REQUIRED"));
+        verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    void myHospitalReport_wrongPin_returns403WithCode_andNoData() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        doThrow(new AnalyticsPinException(AnalyticsPinException.Code.ANALYTICS_PIN_INCORRECT, "Incorrect PIN. 4 attempts left."))
+                .when(analyticsPinService).verify("h1", "1111");
+
+        postJson("/my-hospital", "{\"pin\":\"1111\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ANALYTICS_PIN_INCORRECT"))
+                .andExpect(jsonPath("$.message").value("Incorrect PIN. 4 attempts left."));
+        verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    void myHospitalReport_locked_returns429() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        doThrow(new AnalyticsPinException(AnalyticsPinException.Code.ANALYTICS_PIN_LOCKED, "Too many wrong PINs."))
+                .when(analyticsPinService).verify("h1", "4821");
+
+        postJson("/my-hospital", "{\"pin\":\"4821\"}")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("ANALYTICS_PIN_LOCKED"));
+    }
+
+    @Test
+    void adminEndpoints_errorsHaveNoCode() throws Exception {
+        postJson("/summary", "{}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").doesNotExist());
     }
 
     @Test

@@ -59,4 +59,11 @@ public class LocalHospitalEventPublisher implements HospitalEventPublisher {
         log.warn("DEV ONLY - Kafka is off, claim code not emailed: hospital '{}' ({}) claim code {} (expires {}, for {})",
                 event.hospitalId(), event.hospitalName(), event.claimCode(), event.expiresAt(), event.email());
     }
+
+    // Local dev only, as above: log the analytics PIN reset code so a developer can finish the reset.
+    @Override
+    public void analyticsPinResetCodeIssued(AnalyticsPinResetCodeIssuedEvent event) {
+        log.warn("DEV ONLY - Kafka is off, analytics PIN reset code not emailed: hospital '{}' ({}) code {} (expires {}, for {})",
+                event.hospitalId(), event.hospitalName(), event.resetCode(), event.expiresAt(), event.email());
+    }
 }
