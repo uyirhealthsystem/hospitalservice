@@ -60,6 +60,7 @@ public class HospitalMapper {
                 .claimed(hospital.getUserId() != null)
                 .claimCodeSentTo(claimPending(hospital) ? maskEmail(email(hospital)) : null)
                 .claimCodeExpiresAt(claimPending(hospital) ? hospital.getClaimCodeExpiresAt() : null)
+                .analyticsPinSet(hospital.getAnalyticsPinHash() != null)
                 .build();
     }
 

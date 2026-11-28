@@ -3,6 +3,7 @@ package com.uyir.hospital.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -17,9 +18,11 @@ import com.uyir.hospital.dto.DistrictAnalyticsSummary;
 import com.uyir.hospital.dto.HospitalAnalyticsResponse;
 import com.uyir.hospital.dto.HospitalMetricsResponse;
 import com.uyir.hospital.dto.HospitalMetricsResponse.HospitalMetrics;
+import com.uyir.hospital.exception.AnalyticsPinException;
 import com.uyir.hospital.exception.ForbiddenException;
 import com.uyir.hospital.security.CurrentUserContext;
 import com.uyir.hospital.security.Role;
+import com.uyir.hospital.service.AnalyticsPinService;
 import com.uyir.hospital.service.HospitalAnalyticsService;
 import com.uyir.hospital.service.HospitalMetricsService;
 import java.time.LocalDate;
@@ -49,6 +52,9 @@ class HospitalMetricsControllerTest {
 
     @MockitoBean
     private CurrentUserContext currentUserContext;
+
+    @MockitoBean
+    private AnalyticsPinService analyticsPinService;
 
     @BeforeEach
     void asAdmin() {
@@ -195,17 +201,31 @@ class HospitalMetricsControllerTest {
                 .thenReturn(HospitalMetricsResponse.builder().hospitalId("h1").build());
 
         mockMvc.perform(post(BASE + "/my-hospital").contentType("application/json")
-                        .content("{\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}"))
+                        .content("{\"pin\":\"4821\",\"fromDate\":\"2026-09-01\",\"toDate\":\"2026-09-30\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hospitalId").value("h1"));
+        verify(analyticsPinService).verify("h1", "4821");
     }
 
     @Test
-    void myHospitalMetrics_noBody_passesNullDates() throws Exception {
+    void myHospitalMetrics_pinOnly_passesNullDates() throws Exception {
         when(currentUserContext.requireHospitalId()).thenReturn("h1");
         when(metricsService.getHospitalMetrics(eq("h1"), isNull(), isNull())).thenReturn(new HospitalMetricsResponse());
 
-        mockMvc.perform(post(BASE + "/my-hospital")).andExpect(status().isOk());
+        mockMvc.perform(post(BASE + "/my-hospital").contentType("application/json").content("{\"pin\":\"4821\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void myHospitalMetrics_pinNotSet_returns403WithCode_andNoData() throws Exception {
+        when(currentUserContext.requireHospitalId()).thenReturn("h1");
+        doThrow(new AnalyticsPinException(AnalyticsPinException.Code.ANALYTICS_PIN_NOT_SET, "Set an analytics PIN"))
+                .when(analyticsPinService).verify("h1", null);
+
+        mockMvc.perform(post(BASE + "/my-hospital"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ANALYTICS_PIN_NOT_SET"));
+        verifyNoInteractions(metricsService);
     }
 
     @Test

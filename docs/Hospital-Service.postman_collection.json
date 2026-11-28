@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7386e419-b680-44b9-bcdf-1f59034ae392",
     "name": "Hospital Service",
-    "description": "REST API for the Uyir hospital service. Every path is under the /api/v1/hospital prefix. Base URL defaults to http://localhost:8081 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" (as HOSPITAL user {{hospitalUserId}}) and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests. Each HOSPITAL user owns at most one hospital, so a second run returns 409 unless {{hospitalUserId}} and the registrationNumber change. Then seat the doctor (Doctor Seats › Get Seats → Assign Doctor to Seat): only seated doctors can be booked, show up in a hospital-filtered doctor search, or count for emergency-sos.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalUserId}} (the AuthService user that created the hospital; the service looks the hospital up by that userId) (a hospital only ever sees/reschedules/closes out its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/v1/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. A HOSPITAL caller can see only its own figures: \"Get My Hospital Metrics\" (POST /api/v1/hospital/metrics/my-hospital) and \"Get My Hospital Analytics\" (POST /api/v1/hospital/analytics/my-hospital), with X-User-Role: HOSPITAL and X-User-Id: {{hospitalUserId}}; the district endpoints stay admin-only. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.\n\nDoctor Seats: GET/PUT/DELETE seats and seat purchases act as HOSPITAL. Buying seats also sends Authorization: Bearer {{accessToken}}, forwarded to payment-service; for a real (Razorpay test mode) purchase {{accessToken}} must be an AuthService HOSPITAL token whose sub equals {{hospitalUserId}}. \"Payment Webhook - Simulate PAID (signed)\" signs its body with {{seatWebhookSecret}} (= the server's PAYMENT_WEBHOOK_SECRET) to complete a purchase without paying.\n\nPayout Account: PUT/GET /api/v1/hospital/payout-account act as HOSPITAL and register the bank account appointment payments are paid out to (Razorpay Route via payment-service); Authorization: Bearer {{accessToken}} is forwarded the same way as for seat purchases.",
+    "description": "REST API for the Uyir hospital service. Every path is under the /api/v1/hospital prefix. Base URL defaults to http://localhost:8081 (server.port). Pick the \"Hospital Service - EC2\" environment to hit the deployed server.\n\nRun \"Create Hospital\" (as HOSPITAL user {{hospitalUserId}}) and \"Create Doctor\" first — their tests auto-populate the {{hospitalId}} / {{doctorId}} collection variables used by the rest of the requests. Each HOSPITAL user owns at most one hospital, so a second run returns 409 unless {{hospitalUserId}} and the registrationNumber change. Then seat the doctor (Doctor Seats › Get Seats → Assign Doctor to Seat): only seated doctors can be booked, show up in a hospital-filtered doctor search, or count for emergency-sos.\n\nBooking endpoints (Emergency Bookings, Doctor Appointment Bookings) require X-User-Id / X-User-Role headers. In this deployment those are set by the gateway after AuthService validates the caller's token — this service trusts them as-is, it doesn't verify a JWT itself. Requests acting as the patient send X-User-Role: PATIENT with X-User-Id: {{patientId}}; requests acting as the hospital portal send X-User-Role: HOSPITAL with X-User-Id: {{hospitalUserId}} (the AuthService user that created the hospital; the service looks the hospital up by that userId) (a hospital only ever sees/reschedules/closes out its own bookings, scoped by that header, not a query param).\n\nHospital Analytics endpoints are called by the Admin service with X-User-Role: ADMIN or SUPER_ADMIN (the Admin service decides which district an admin manages). Every analytics endpoint is POST with a required \"district\" body field. \"Get All District Metrics\" (Hospital Metrics folder) is a GET with the district in the URL (GET /api/v1/hospital/metrics/{{district}}, always the last 30 days) returning summary + per-hospital + trends in one call. A HOSPITAL caller can see only its own figures: \"Get My Hospital Metrics\" (POST /api/v1/hospital/metrics/my-hospital) and \"Get My Hospital Analytics\" (POST /api/v1/hospital/analytics/my-hospital), with X-User-Role: HOSPITAL and X-User-Id: {{hospitalUserId}}; the district endpoints stay admin-only. Both need the hospital's analytics PIN ({{analyticsPin}}) in the body on every call - run \"Analytics PIN › Set Analytics PIN\" first. Run \"Create Analytics Snapshot\" before the snapshot detail/delete requests — it populates {{analyticsSnapshotId}}.\n\nDoctor Seats: GET/PUT/DELETE seats and seat purchases act as HOSPITAL. Buying seats also sends Authorization: Bearer {{accessToken}}, forwarded to payment-service; for a real (Razorpay test mode) purchase {{accessToken}} must be an AuthService HOSPITAL token whose sub equals {{hospitalUserId}}. \"Payment Webhook - Simulate PAID (signed)\" signs its body with {{seatWebhookSecret}} (= the server's PAYMENT_WEBHOOK_SECRET) to complete a purchase without paying.\n\nPayout Account: PUT/GET /api/v1/hospital/payout-account act as HOSPITAL and register the bank account appointment payments are paid out to (Razorpay Route via payment-service); Authorization: Bearer {{accessToken}} is forwarded the same way as for seat purchases.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -128,6 +128,21 @@
     },
     {
       "key": "outsideWindowDateTime",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "analyticsPin",
+      "value": "4821",
+      "type": "string"
+    },
+    {
+      "key": "previousAnalyticsPin",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "analyticsPinResetCode",
       "value": "",
       "type": "string"
     }
@@ -5273,6 +5288,479 @@
       ]
     },
     {
+      "name": "Analytics PIN",
+      "description": "HOSPITAL only, the caller's own hospital. Once set, the PIN must be sent in the body of every POST /metrics/my-hospital and POST /analytics/my-hospital call - there is no unlock session. Until a PIN is set those endpoints return 403 code ANALYTICS_PIN_NOT_SET. Errors carry a `code`: ANALYTICS_PIN_NOT_SET / ANALYTICS_PIN_REQUIRED / ANALYTICS_PIN_INCORRECT (403), ANALYTICS_PIN_LOCKED (429, after 5 wrong PINs, 15 minutes), ANALYTICS_PIN_ALREADY_SET (409). PIN = 4-6 digits, not repeated (1111) or in order (1234).",
+      "item": [
+        {
+          "name": "Set Analytics PIN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created, or 409 if a PIN was set on an earlier run', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));",
+                  "if (pm.response.code === 201) pm.test('pin is set', () => pm.expect(pm.response.json().pinSet).to.eql(true));",
+                  "if (pm.response.code === 409) pm.test('code is ANALYTICS_PIN_ALREADY_SET', () => pm.expect(pm.response.json().code).to.eql('ANALYTICS_PIN_ALREADY_SET'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "Sets the first PIN. 201 with the PIN status; 409 ANALYTICS_PIN_ALREADY_SET when one exists (use Change or Reset).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Analytics PIN Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('pin is set', () => pm.expect(pm.response.json().pinSet).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "pinSet, pinUpdatedAt, and lockedUntil (only while locked). The PIN itself is never returned.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set PIN that is too easy (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 (bad PIN) or 409 (already set)', () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "1234 is rejected: PINs that are repeated or in order are refused.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"1234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Hospital Analytics - Wrong PIN (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('code is ANALYTICS_PIN_INCORRECT', () => pm.expect(pm.response.json().code).to.eql('ANALYTICS_PIN_INCORRECT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "A wrong PIN returns 403 ANALYTICS_PIN_INCORRECT with the attempts left, and no data. 5 wrong in a row lock the PIN for 15 minutes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"9157\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics/my-hospital",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics",
+                "my-hospital"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Hospital Analytics - No PIN (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('code is ANALYTICS_PIN_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('ANALYTICS_PIN_REQUIRED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "No pin in the body: 403 ANALYTICS_PIN_REQUIRED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics/my-hospital",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics",
+                "my-hospital"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change Analytics PIN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('previousAnalyticsPin', pm.variables.get('analyticsPin'));",
+                  "pm.collectionVariables.set('analyticsPin', '7395');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "Needs the current PIN (a wrong one counts toward the lock). Changes {{analyticsPin}} to 7395; the next request changes it back.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPin\": \"{{analyticsPin}}\",\n  \"newPin\": \"7395\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin",
+                "change"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change Analytics PIN Back",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('analyticsPin', pm.variables.get('previousAnalyticsPin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "Restores the original PIN so the rest of the collection keeps working.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPin\": \"{{analyticsPin}}\",\n  \"newPin\": \"{{previousAnalyticsPin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin",
+                "change"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Request Analytics PIN Reset (forgot PIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, or 429 if one was just sent', () => pm.expect(pm.response.code).to.be.oneOf([200, 429]));",
+                  "if (pm.response.code === 200) pm.test('says where the code went', () => pm.expect(pm.response.json().codeSentTo).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "Emails a 6-digit code (valid 15 minutes) to the hospital's contact email via notification-service (AnalyticsPinResetCodeIssued event on hospital.events). With Kafka off the code is logged instead (DEV ONLY). 429 if asked again within a minute; 409 if no PIN or no contact email.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin",
+                "reset"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Confirm Analytics PIN Reset",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with the real code (400/409 otherwise)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409, 429]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hospitalUserId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "HOSPITAL"
+              }
+            ],
+            "description": "Paste the code from the email into {{analyticsPinResetCode}}. Sets the new PIN and clears any lock. A wrong code shows the attempts left (5 max).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetCode\": \"{{analyticsPinResetCode}}\",\n  \"newPin\": \"{{analyticsPin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hospital/analytics-pin/reset/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hospital",
+                "analytics-pin",
+                "reset",
+                "confirm"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Hospital Metrics",
       "description": "Business metrics in one JSON object, service-wide or for one district. Service-wide: POST with optional { fromDate, toDate } body (empty body allowed). District: { district, fromDate?, toDate? }, district required. Headers: X-User-Role ADMIN or SUPER_ADMIN, X-User-Id. GET /api/v1/hospital/metrics/{district}: district in the URL, no body or dates (always the last 30 days); returns the full district report (summary + per-hospital + daily trends).",
       "item": [
@@ -5417,10 +5905,10 @@
                 "value": "HOSPITAL"
               }
             ],
-            "description": "HOSPITAL only. The same counts as the district metrics, for the caller's own hospital - resolved from X-User-Id (the AuthService user that created it). Body optional; omit for the last 30 days. Returns 403 if the user has no hospital.",
+            "description": "HOSPITAL only. The same counts as the district metrics, for the caller's own hospital - resolved from X-User-Id (the AuthService user that created it). Dates optional; omit them for the last 30 days. Returns 403 if the user has no hospital. Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5444,7 +5932,7 @@
           "id": "1d09f376-a240-49c2-a1ef-40a15b326f5d"
         },
         {
-          "name": "Get My Hospital Metrics - No Body (last 30 days)",
+          "name": "Get My Hospital Metrics - PIN Only (last 30 days)",
           "event": [
             {
               "listen": "test",
@@ -5463,6 +5951,10 @@
             "method": "POST",
             "header": [
               {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
                 "key": "X-User-Id",
                 "value": "{{hospitalUserId}}"
               },
@@ -5471,7 +5963,7 @@
                 "value": "HOSPITAL"
               }
             ],
-            "description": "No body: the range defaults to the last 30 days ending today (IST).",
+            "description": "Only the PIN: the range defaults to the last 30 days ending today (IST). Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "url": {
               "raw": "{{baseUrl}}/api/v1/hospital/metrics/my-hospital",
               "host": [
@@ -5484,6 +5976,15 @@
                 "metrics",
                 "my-hospital"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "id": "232b57a5-8d9c-4175-bd14-43b2769ceaa0"
@@ -5517,10 +6018,10 @@
                 "value": "ADMIN"
               }
             ],
-            "description": "my-hospital is HOSPITAL-only; admins use the service-wide / district metrics.",
+            "description": "my-hospital is HOSPITAL-only; admins use the service-wide / district metrics. Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5719,10 +6220,10 @@
                 "value": "HOSPITAL"
               }
             ],
-            "description": "HOSPITAL only. The caller's own hospital figures (beds, doctors, bookings by status) plus daily trends. Hospital resolved from X-User-Id; no district in the body. Body optional; omit for the last 30 days.",
+            "description": "HOSPITAL only. The caller's own hospital figures (beds, doctors, bookings by status) plus daily trends. Hospital resolved from X-User-Id; no district in the body. Dates optional; omit them for the last 30 days. Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5774,10 +6275,10 @@
                 "value": "HOSPITAL"
               }
             ],
-            "description": "fromDate must be on or before toDate, and the range may not exceed 366 days.",
+            "description": "fromDate must be on or before toDate, and the range may not exceed 366 days. Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromDate\": \"2026-09-30\",\n  \"toDate\": \"2026-09-01\"\n}",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\",\n  \"fromDate\": \"2026-09-30\",\n  \"toDate\": \"2026-09-01\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5829,10 +6330,10 @@
                 "value": "HOSPITAL"
               }
             ],
-            "description": "A HOSPITAL user that hasn't created a hospital gets 403 (\"No hospital is registered for user …\").",
+            "description": "A HOSPITAL user that hasn't created a hospital gets 403 (\"No hospital is registered for user …\"). Requires the hospital's analytics PIN in the body on every call (run Analytics PIN › Set Analytics PIN first).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
+              "raw": "{\n  \"pin\": \"{{analyticsPin}}\",\n  \"fromDate\": \"2026-09-01\",\n  \"toDate\": \"2026-09-30\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

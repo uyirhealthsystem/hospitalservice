@@ -43,6 +43,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(AnalyticsPinException.class)
+    public ResponseEntity<ApiError> handleAnalyticsPin(AnalyticsPinException ex, HttpServletRequest request) {
+        ResponseEntity<ApiError> response = build(ex.getStatus(), ex.getMessage(), request, null);
+        response.getBody().setCode(ex.getCode().name());
+        return response;
+    }
+
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ApiError> handleConflict(ConflictException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request, null);

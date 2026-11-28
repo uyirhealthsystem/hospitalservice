@@ -46,4 +46,7 @@ public class HospitalResponse {
     // claimed or no code is active.
     private String claimCodeSentTo;
     private Instant claimCodeExpiresAt;
+
+    // true once the hospital has set its analytics PIN. The PIN (hash) itself is never returned.
+    private boolean analyticsPinSet;
 }

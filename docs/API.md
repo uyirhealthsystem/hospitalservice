@@ -201,6 +201,8 @@ Every 4xx/5xx response body is an `ApiError`:
 }
 ```
 
+Some errors also carry a machine-readable `code` (omitted otherwise) so the UI can pick a screen without parsing `message`. The analytics PIN codes are `ANALYTICS_PIN_NOT_SET`, `ANALYTICS_PIN_REQUIRED`, `ANALYTICS_PIN_INCORRECT`, `ANALYTICS_PIN_LOCKED` and `ANALYTICS_PIN_ALREADY_SET`. See [Analytics PIN](#analytics-pin).
+
 ---
 
 ## Full body reference
@@ -1041,14 +1043,44 @@ curl "http://localhost:8080/api/v1/hospital/metrics/Chennai" \
 
 ## A hospital's own metrics and analytics
 
-HOSPITAL callers can see **only their own hospital**. Send `X-User-Role: HOSPITAL` and `X-User-Id: <AuthService user id>`; the service looks up the hospital that user created (`Hospital.userId`). There is no district or hospital id in the request. Both bodies are optional `{ "fromDate": "yyyy-MM-dd", "toDate": "yyyy-MM-dd" }` (default: last 30 days, max 366).
+HOSPITAL callers can see **only their own hospital**. Send `X-User-Role: HOSPITAL` and `X-User-Id: <AuthService user id>`; the service looks up the hospital that user created (`Hospital.userId`). There is no district or hospital id in the request. Both bodies are `{ "pin": "4821", "fromDate": "yyyy-MM-dd", "toDate": "yyyy-MM-dd" }`. The **analytics PIN is required on every call** (see [Analytics PIN](#analytics-pin)); the dates are optional (default: last 30 days, max 366).
 
 | Endpoint | Returns |
 |---|---|
 | `POST /api/v1/hospital/metrics/my-hospital` | Same shape as the metrics above, with `hospitalId` set (instead of `district`) and every count scoped to that hospital |
 | `POST /api/v1/hospital/analytics/my-hospital` | `{ fromDate, toDate, generatedAt, hospital: <Analytics "Per-hospital row">, trends: [ ...one point per day... ] }` |
 
-`403` if the role isn't `HOSPITAL` or the user has no hospital. The district endpoints and snapshots stay `ADMIN` / `SUPER_ADMIN` only.
+`403` if the role isn't `HOSPITAL` or the user has no hospital. PIN failures return the `code`s listed under [Analytics PIN](#analytics-pin), with no data. The district endpoints and snapshots stay `ADMIN` / `SUPER_ADMIN` only, with no PIN.
+
+## Analytics PIN
+
+After a hospital account owns its hospital (claimed it, or created it itself), it sets a PIN. From then on, `POST /metrics/my-hospital` and `POST /analytics/my-hospital` only answer when the body carries the right `pin`. There is no unlock session or token: the PIN is checked on every call. **Until a PIN is set, those two endpoints are blocked** (`ANALYTICS_PIN_NOT_SET`), so the app should send the admin to "set a PIN" first.
+
+All endpoints: `X-User-Role: HOSPITAL`, the caller's own hospital, JSON bodies.
+
+| Endpoint | Body | Returns |
+|---|---|---|
+| `GET /api/v1/hospital/analytics-pin` | none | `200` status |
+| `POST /api/v1/hospital/analytics-pin` | `{ "pin": "4821" }` | `201` status. `409 ANALYTICS_PIN_ALREADY_SET` if one exists |
+| `POST /api/v1/hospital/analytics-pin/change` | `{ "currentPin": "4821", "newPin": "7395" }` | `200` status. A wrong `currentPin` counts toward the lock |
+| `POST /api/v1/hospital/analytics-pin/reset` | none | `200 { "codeSentTo": "ad***@city.in", "expiresAt": "…" }`. Emails a 6-digit code |
+| `POST /api/v1/hospital/analytics-pin/reset/confirm` | `{ "resetCode": "482913", "newPin": "7395" }` | `200` status. Also clears any lock |
+
+Status response: `{ "pinSet": true, "pinUpdatedAt": "2026-11-28T10:00:00Z", "lockedUntil": null }`. `lockedUntil` is set only while the PIN is locked. `HospitalResponse` (and `/me`) also has `analyticsPinSet: true|false`. The PIN is never returned.
+
+**PIN rules:** 4 to 6 digits; not all the same digit (`1111`) and not in order (`1234`, `654321`). Otherwise `400`. Stored only as a BCrypt hash.
+
+**Wrong PINs:** each wrong PIN returns `403 ANALYTICS_PIN_INCORRECT` with "Incorrect PIN. N attempts left.". The 5th wrong PIN in a row locks the PIN for **15 minutes**: `429 ANALYTICS_PIN_LOCKED` (even with the right PIN) until it expires or the PIN is reset. A correct PIN resets the count.
+
+| `code` | Status | Meaning / what the app should do |
+|---|---|---|
+| `ANALYTICS_PIN_NOT_SET` | 403 | No PIN yet. Show "set a PIN" |
+| `ANALYTICS_PIN_REQUIRED` | 403 | No `pin` in the body. Ask for the PIN |
+| `ANALYTICS_PIN_INCORRECT` | 403 | Wrong PIN. Show the message (attempts left) |
+| `ANALYTICS_PIN_LOCKED` | 429 | Too many wrong PINs. Wait, or offer "Forgot PIN" |
+| `ANALYTICS_PIN_ALREADY_SET` | 409 | Use change or reset instead |
+
+**Forgot PIN:** `POST /analytics-pin/reset` emails a 6-digit code to `contactDetails.email`, valid **15 minutes**, single use, 5 wrong tries max. It's published as `AnalyticsPinResetCodeIssued` (v1) on `hospital.events`, `data = { hospitalId, hospitalName, email, resetCode, expiresAt }`, for notification-service to email. Asking again within 60 s returns `429`. If there's no PIN or no contact email, it returns `409`. With Kafka off (local dev) the code is logged instead.
 
 > **Actuator** (health/info, used by the k8s probes and ALB) now lives under `/api/v1/hospital/actuator`, e.g. `/api/v1/hospital/actuator/health`, so every path contains `hospital`.
 

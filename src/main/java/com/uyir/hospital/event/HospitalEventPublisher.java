@@ -19,4 +19,7 @@ public interface HospitalEventPublisher {
 
     // Asks notification-service to email a PRO-onboarded hospital its id and one-time claim code.
     void hospitalClaimCodeIssued(HospitalClaimCodeIssuedEvent event);
+
+    // Asks notification-service to email a hospital the one-time code that resets its forgotten analytics PIN.
+    void analyticsPinResetCodeIssued(AnalyticsPinResetCodeIssuedEvent event);
 }

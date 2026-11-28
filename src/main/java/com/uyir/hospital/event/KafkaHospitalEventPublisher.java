@@ -201,4 +201,28 @@ public class KafkaHospitalEventPublisher implements HospitalEventPublisher {
             }
         });
     }
+
+    // Keyed by hospital id. A lost email is logged, not retried: the hospital can ask for a new reset code.
+    @Override
+    public void analyticsPinResetCodeIssued(AnalyticsPinResetCodeIssuedEvent event) {
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(HospitalEvent.of(
+                    AnalyticsPinResetCodeIssuedEvent.EVENT_TYPE, AnalyticsPinResetCodeIssuedEvent.EVENT_VERSION, event));
+        } catch (RuntimeException ex) {
+            log.error("Could not serialize AnalyticsPinResetCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                kafkaTemplate.send(topic, event.hospitalId(), json).whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to publish AnalyticsPinResetCodeIssued for hospital '{}'", event.hospitalId(), ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                log.error("Failed to publish AnalyticsPinResetCodeIssued for hospital '{}'", event.hospitalId(), ex);
+            }
+        });
+    }
 }
